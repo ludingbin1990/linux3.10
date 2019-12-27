@@ -757,7 +757,6 @@ void __init setup_log_buf(int early)
 	unsigned long flags;
 	char *new_log_buf;
 	int free;
-	pr_err("new_log_buf_len=%lx\n",new_log_buf_len);
 	if (!new_log_buf_len)
 		return;
 
@@ -1779,7 +1778,6 @@ static int __add_preferred_console(char *name, int idx, char *options,
 	c->brl_options = brl_options;
 #endif
 	c->index = idx;
-	pr_err("c->options=%s,c->name=%s,c->index=%d",c->options,c->name,c->index);
 	return 0;
 }
 /*

@@ -168,7 +168,6 @@ static int __init obsolete_checksetup(char *line)
 	do {
 		int n = strlen(p->str);
 		if (parameqn(line, p->str, n)) {
-			pr_err(" obsolete_checksetup=%s \n",line);
 			if (p->early) {
 				/* Already done in parse_early_param?
 				 * (Needs exact match on param part).
@@ -180,10 +179,9 @@ static int __init obsolete_checksetup(char *line)
 				pr_warn("Parameter %s is obsolete, ignored\n",
 					p->str);
 				return 1;
-			} else if (p->setup_func(line + n)){
-			pr_err(" p->setup_func \n",p->setup_func);
+			} else if (p->setup_func(line + n))
 				return 1;
-				}
+
 		}
 		p++;
 	} while (p < __setup_end);
@@ -353,8 +351,6 @@ static void __init setup_command_line(char *command_line)
 	static_command_line = alloc_bootmem(strlen (command_line)+1);
 	strcpy (saved_command_line, boot_command_line);
 	strcpy (static_command_line, command_line);
-	pr_err(" saved_command_line=%s \n",saved_command_line);
-	pr_err(" static_command_line=%s \n",static_command_line);
 }
 
 /*
@@ -400,13 +396,10 @@ static int __init do_early_param(char *param, char *val, const char *unused)
 	const struct obs_kernel_param *p;
 
 	for (p = __setup_start; p < __setup_end; p++) {
-		//if(p->str)
-		//	pr_err("do_early_param get  '%s'\n",p->str);
 		if ((p->early && parameq(param, p->str)) ||
 		    (strcmp(param, "console") == 0 &&
 		     strcmp(p->str, "earlycon") == 0)
 		) {
-		pr_err("do %s  address=%p\n",p->str,p->setup_func);
 			if (p->setup_func(val) != 0)
 				pr_err("Malformed early option '%s'\n", param);
 		}
@@ -630,7 +623,6 @@ asmlinkage void __init start_kernel(void)
 	cpuset_init();
 	taskstats_init_early();
 	delayacct_init();
-	printk(KERN_INFO "  delayacct_init\n");
 	check_bugs();
 
 	acpi_early_init(); /* before LAPIC and SMP init */
@@ -816,7 +808,6 @@ static noinline void __init kernel_init_freeable(void);
 
 static int __ref kernel_init(void *unused)
 {
-	printk(KERN_INFO "  kernel_init.\n");
 	kernel_init_freeable();
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
@@ -827,10 +818,9 @@ static int __ref kernel_init(void *unused)
 
 	flush_delayed_fput();
 	
-if (ramdisk_execute_command) {
+	if (ramdisk_execute_command) {
 		if (!run_init_process(ramdisk_execute_command))
 			return 0;
-		pr_err("Failed to execute %s\n", ramdisk_execute_command);
 	}
 	/*
 	 * We try each of these until one succeeds.
@@ -841,8 +831,6 @@ if (ramdisk_execute_command) {
 	if (execute_command) {
 		if (!run_init_process(execute_command))
 			return 0;
-		pr_err("Failed to execute %s.  Attempting defaults...\n",
-			execute_command);
 	}
 	if (!run_init_process("/sbin/init") ||
 	    !run_init_process("/etc/init") ||

@@ -3701,7 +3701,6 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 	set_zonelist_order();
 
 	if (system_state == SYSTEM_BOOTING) {
-		pr_err(" system_state == SYSTEM_BOOTING \n");
 		__build_all_zonelists(NULL);
 		mminit_verify_zonelist();
 		cpuset_init_current_mems_allowed();

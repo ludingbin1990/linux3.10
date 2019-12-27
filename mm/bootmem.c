@@ -109,10 +109,6 @@ static unsigned long __init init_bootmem_core(bootmem_data_t *bdata,
 	 */
 	mapsize = bootmap_bytes(end - start);
 	memset(bdata->node_bootmem_map, 0xff, mapsize);
-
-	pr_err("nid=%td start=%lx map=%lx end=%lx mapsize=%lx\n",
-		bdata - bootmem_node_data, start, mapstart, end, mapsize);
-
 	return mapsize;
 }
 
@@ -491,9 +487,6 @@ static void * __init alloc_bootmem_bdata(struct bootmem_data *bdata,
 	unsigned long fallback = 0;
 	unsigned long min, max, start, sidx, midx, step;
 
-	pr_err("nid=%td size=%lx [%lu pages] align=%lx goal=%lx limit=%lx\n",
-		bdata - bootmem_node_data, size, PAGE_ALIGN(size) >> PAGE_SHIFT,
-		align, goal, limit);
 
 	BUG_ON(!size);
 	BUG_ON(align & (align - 1));

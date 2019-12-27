@@ -999,7 +999,6 @@ phys_addr_t arm_lowmem_limit __initdata = 0;
 void __init sanity_check_meminfo(void)
 {
 	int i, j, highmem = 0;
-pr_err("sanity_check_meminfo  meminfo.nr_banks=%d   vmalloc_min=%lx \n", meminfo.nr_banks,(long signed int)vmalloc_min);
 	for (i = 0, j = 0; i < meminfo.nr_banks; i++) {
 		
 		struct membank *bank = &meminfo.bank[j];
@@ -1104,7 +1103,6 @@ pr_err("sanity_check_meminfo  meminfo.nr_banks=%d   vmalloc_min=%lx \n", meminfo
 	}
 #endif
 	meminfo.nr_banks = j;
-pr_err("high_memory=%lx    arm_lowmem_limit=%lx \n",high_memory,arm_lowmem_limit);
 	high_memory = __va(arm_lowmem_limit - 1) + 1;
 	memblock_set_current_limit(arm_lowmem_limit);
 }
@@ -1117,7 +1115,6 @@ static inline void prepare_page_table(void)
 	/*
 	 * Clear out all the mappings below the kernel image.
 	 */
-	pr_err(" MODULES_VADDR=%lx    PMD_SIZE=%lx   PAGE_OFFSET=%lx  VMALLOC_START=%lx\n",MODULES_VADDR,PMD_SIZE,PAGE_OFFSET,VMALLOC_START);
 	for (addr = 0; addr < MODULES_VADDR; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
 

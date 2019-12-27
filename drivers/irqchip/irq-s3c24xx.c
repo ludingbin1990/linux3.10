@@ -1340,7 +1340,6 @@ static int __init s3c_init_intc_of_new(struct device_node *np,
 		parent_domain=irq_find_host(interrupt_parent);
 		if(parent_domain){
 			parent_intc=parent_domain->host_data;
-			pr_err("find the parent intc\n");
 		}
 	}
 	domain = irq_domain_add_linear(np, 256,&s3c24xx_irq_ops_of, NULL);

@@ -5,6 +5,16 @@
  * Copyright (c) 2013 Heiko Stuebner <heiko@sntech.de>
  */
 
+
+/*
+
+interrupt controller
+1 main controller:intc
+2 sub controller:sub-intc
+3 sub controller:extrn-intc
+#interrupt-cells = <0x4>;  <controller-number   main-controller-irq-number   sub-controller-number   Interrupt-trigger-type>
+uart and timer setting just use the interrupt innformation,the other platform device information is static in the code
+*/
 /dts-v1/;
 #include "s3c2416.dtsi"
 

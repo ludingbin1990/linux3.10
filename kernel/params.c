@@ -190,7 +190,7 @@ int parse_args(const char *doing,
 	args = skip_spaces(args);
 
 	if (*args)
-		pr_err("doing %s, parsing ARGS: '%s'\n", doing, args);
+		pr_info("doing %s, parsing ARGS: '%s'\n", doing, args);
 
 	while (*args) {
 		int ret;

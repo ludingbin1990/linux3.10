@@ -167,7 +167,6 @@ static void __init arm_bootmem_init(unsigned long start_pfn,
 	boot_pages = bootmem_bootmap_pages(end_pfn - start_pfn);
 	bitmap = memblock_alloc_base(boot_pages << PAGE_SHIFT, L1_CACHE_BYTES,
 				__pfn_to_phys(end_pfn));
-	pr_err("boot_pages=%x   bitmap=%x \n",boot_pages,bitmap);
 	/*
 	 * Initialise the bootmem allocator, handing the
 	 * memory banks over to bootmem.
@@ -185,7 +184,6 @@ static void __init arm_bootmem_init(unsigned long start_pfn,
 			end = end_pfn;
 		if (start >= end)
 			break;
-		pr_err("start=%lx   end=%lx \n",start,end);
 		free_bootmem(__pfn_to_phys(start), (end - start) << PAGE_SHIFT);
 	}
 
@@ -394,7 +392,6 @@ void __init bootmem_init(void)
 	max_low = max_high = 0;
 
 	find_limits(&min, &max_low, &max_high);
-	pr_err("min=%lx    max_low=%lx   max_high=%lx \n",min,max_low,max_high);
 	arm_bootmem_init(min, max_low);
 
 	/*
@@ -501,9 +498,7 @@ static void __init free_unused_memmap(struct meminfo *mi)
 		 * If we had a previous bank, and there is a space
 		 * between the current bank and the previous, free it.
 		 */
-		 pr_err("bank_start=%lx,prev_bank_end=%lx\n",bank_start,prev_bank_end);
 		if (prev_bank_end && prev_bank_end < bank_start){
-			pr_err("free_memmap   bank_start=%lx,prev_bank_end=%lx\n",bank_start,prev_bank_end);
 			free_memmap(prev_bank_end, bank_start);
 		}
 
@@ -600,7 +595,6 @@ void __init mem_init(void)
 	free_unused_memmap(&meminfo);
 
 	totalram_pages += free_all_bootmem();
-	pr_err("totalram_pages=%lx \n",totalram_pages);
 
 #ifdef CONFIG_SA1111
 	/* now that our DMA memory is actually so designated, we can free it */
