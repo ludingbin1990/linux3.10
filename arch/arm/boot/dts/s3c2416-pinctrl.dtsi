@@ -80,7 +80,7 @@
 	 * Pin groups
 	 */
 
-	uart0_data: uart0-data {
+	/*uart0_data: uart0-data {
 		samsung,pins = "gph-0", "gph-1";
 		samsung,pin-function = <EXYNOS_PIN_FUNC_2>;
 	};
@@ -109,12 +109,7 @@
 		samsung,pins = "gph-6", "gph-7";
 		samsung,pin-function = <EXYNOS_PIN_FUNC_2>;
 	};
-
-	uart3_data: uart3-data {
-		samsung,pins = "gph-6", "gph-7";
-		samsung,pin-function = <EXYNOS_PIN_FUNC_2>;
-	};
-
+*/
 	extuart_clk: extuart-clk {
 		samsung,pins = "gph-12";
 		samsung,pin-function = <EXYNOS_PIN_FUNC_2>;

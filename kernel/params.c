@@ -198,7 +198,6 @@ int parse_args(const char *doing,
 
 		args = next_arg(args, &param, &val);
 		irq_was_disabled = irqs_disabled();
-		pr_err("parse_args param=%s\n",param);
 		ret = parse_one(param, val, doing, params, num,
 				min_level, max_level, unknown);
 		if (irq_was_disabled && !irqs_disabled())

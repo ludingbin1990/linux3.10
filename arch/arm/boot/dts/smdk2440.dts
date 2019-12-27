@@ -27,12 +27,40 @@
 			#clock-cells = <0>;
 		};
 	};
-};
+	eth0@20000000 {
+		compatible = "dv,dm9000";
+		interrupt-parent = <&extintc>;
+		reg = <0x20000000 0x4>,<0x20000004 0x4>;
+		interrupts = <0 4 7 1>;
+	};
+	uart0: serial0@50000000 {
+		compatible = "samsung,2440-uart";
+		interrupt-parent = <&subintc>;
+		reg = <0x50000000 0x4000>;
+		interrupts = <1 28 0 4>,<1 28 1 4>;
+		status = "okay";
+	};
 
+	uart1: serial1@50004000 {
+		compatible = "samsung,2440-uart";
+		interrupt-parent = <&subintc>;
+		reg = <0x50004000 0x4000>;
+		interrupts = <1 23 3 4>,<1 23 4 4>;
+		status = "okay";
+	};
+	uart2: serial2@50008000 {
+		compatible = "samsung,2440-uart";
+		interrupt-parent = <&subintc>;
+		reg = <0x50008000 0x4000>;
+		interrupts = <1 15 6 4>,<1 15 7 4>;
+		status = "okay";
+	};
+};
+/*
 &rtc {
 	status = "okay";
 };
-
+*/
 &sdhci_0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&sd1_clk>, <&sd1_cmd>,
@@ -50,24 +78,6 @@
 	cd-gpios = <&gpf 1 0>;
 	cd-inverted;
 	status = "okay";
-};
-
-&uart_0 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart0_data>, <&uart0_fctl>;
-};
-
-&uart_1 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart1_data>, <&uart1_fctl>;
-};
-
-&uart_2 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart2_data>;
 };
 
 &watchdog {

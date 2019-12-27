@@ -18,9 +18,25 @@
 			compatible = "arm,arm926ej-s";
 		};
 	};
-
-	interrupt-controller@4a000000 {
-		compatible = "samsung,s3c2416-irq";
+	/*first interrupt-controller */
+	intc:interrupt-controller@4a000000 {
+		compatible = "samsung,s3c2440-irq";
+	};
+	/*second interrupt-controller */
+	subintc:sub-interrupt-controller@4a000000 {
+		compatible = "samsung,s3c2440-irq";
+		interrupt-parent = <&intc>;
+		reg = <0x4a000018 0x40>;
+		#interrupt-cells = <4>;
+		interrupt-controller;
+	};
+	/*thrid interrupt-controller */
+	extintc:ext-interrupt-controller@4a000000 {
+		compatible = "samsung,s3c2440-irq";
+		interrupt-parent = <&intc>;
+		reg = <0x560000A4 0x40>;
+		#interrupt-cells = <4>;
+		interrupt-controller;
 	};
 
 	clocks: clock-controller@4c000000 {
@@ -32,36 +48,6 @@
 	pinctrl@56000000 {
 		compatible = "samsung,s3c2416-pinctrl";
 	};
-
-	timer@51000000 {
-		clocks = <&clocks PCLK_PWM>;
-		clock-names = "timers";
-	};
-
-	uart_0: serial@50000000 {
-		compatible = "samsung,s3c2440-uart";
-		clock-names = "uart", "clk_uart_baud2",
-				"clk_uart_baud3";
-		clocks = <&clocks PCLK_UART0>, <&clocks PCLK_UART0>,
-				<&clocks SCLK_UART>;
-	};
-
-	uart_1: serial@50004000 {
-		compatible = "samsung,s3c2440-uart";
-		clock-names = "uart", "clk_uart_baud2",
-				"clk_uart_baud3";
-		clocks = <&clocks PCLK_UART1>, <&clocks PCLK_UART1>,
-				<&clocks SCLK_UART>;
-	};
-
-	uart_2: serial@50008000 {
-		compatible = "samsung,s3c2440-uart";
-		clock-names = "uart", "clk_uart_baud2",
-				"clk_uart_baud3";
-		clocks = <&clocks PCLK_UART2>, <&clocks PCLK_UART2>,
-				<&clocks SCLK_UART>;
-	};
-
 	sdhci_1: sdhci@4ac00000 {
 		compatible = "samsung,s3c6410-sdhci";
 		reg = <0x4AC00000 0x100>;
@@ -85,16 +71,16 @@
 	};
 
 	watchdog: watchdog@53000000 {
-		interrupts = <1 9 27 3>;
+		interrupts = <1 9 13 3>;
 		clocks = <&clocks PCLK_WDT>;
 		clock-names = "watchdog";
 	};
 
-	rtc: rtc@57000000 {
+	/*rtc: rtc@57000000 {
 		compatible = "samsung,s3c2416-rtc";
 		clocks = <&clocks PCLK_RTC>;
 		clock-names = "rtc";
-	};
+	};*/
 
 	i2c@54000000 {
 		compatible = "samsung,s3c2440-i2c";

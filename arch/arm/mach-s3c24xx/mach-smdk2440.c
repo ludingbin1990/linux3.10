@@ -177,12 +177,14 @@ static struct platform_device s3c_device_dm9k = {
 };
 #endif
 static struct platform_device *smdk2440_devices[] __initdata = {
+#if 0
 	&s3c_device_ohci,
 	&s3c_device_lcd,
 	&s3c_device_wdt,
 	&s3c_device_i2c0,
 	&s3c_device_iis,
-#ifdef CONFIG_DM9000
+
+//#ifdef CONFIG_DM9000
 	&s3c_device_dm9k,
 #endif
 };

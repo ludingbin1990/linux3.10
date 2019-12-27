@@ -4515,7 +4515,6 @@ static void __init setup_usemap(struct pglist_data *pgdat,
 				unsigned long zonesize)
 {
 	unsigned long usemapsize = usemap_size(zone_start_pfn, zonesize);
-	pr_err(" setup_usemap   usemapsize=%lx\n",usemapsize);
 	zone->pageblock_flags = NULL;
 	if (usemapsize)
 		zone->pageblock_flags = alloc_bootmem_node_nopanic(pgdat,
@@ -4656,7 +4655,6 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		 * And all highmem pages will be managed by the buddy system.
 		 */
 		zone->managed_pages = is_highmem_idx(j) ? realsize : freesize;
-		pr_err(" zone->managed_pages=%lx \n",zone->managed_pages);
 #ifdef CONFIG_NUMA
 		zone->node = nid;
 		zone->min_unmapped_pages = (freesize*sysctl_min_unmapped_ratio)
@@ -4739,11 +4737,6 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 	calculate_node_totalpages(pgdat, zones_size, zholes_size);
 
 	alloc_node_mem_map(pgdat);
-//#ifdef CONFIG_FLAT_NODE_MEM_MAP
-	pr_err("free_area_init_node: node %d, pgdat %08lx, node_mem_map %08lx\n",
-		nid, (unsigned long)pgdat,
-		(unsigned long)pgdat->node_mem_map);
-//#endif
 
 	free_area_init_core(pgdat, zones_size, zholes_size);
 }

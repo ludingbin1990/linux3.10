@@ -100,6 +100,35 @@ static struct s3c2410_uartcfg uart_cfgs[CONFIG_SERIAL_SAMSUNG_UARTS];
  * This also fills in the array passed to the serial driver for the
  * early initialisation of the console.
 */
+extern struct device_node *of_find_node_by_path(const char *path);
+extern struct device_node *of_get_child_by_name(const struct device_node *node,
+				const char *name);
+extern unsigned int irq_of_parse_and_map(struct device_node *dev, int index);
+void __init s3c24xx_init_uartdevs_later_of(void)
+{
+	struct platform_device *platdev;
+	unsigned char of_name[20];
+	int uart;
+	struct device_node *root,*get_node;
+	root = of_find_node_by_path("/");
+	if(!root){
+		pr_err("did not get the  root %s\n",__FUNCTION__);
+		return ;
+	}
+	memset(of_name,0,sizeof(of_name));
+	for (uart = 0; uart < 3; uart++) {
+		platdev = s3c24xx_uart_src[uart];
+		sprintf(of_name,"serial%d",uart);
+		get_node=of_get_child_by_name(root,of_name);
+		if(!get_node){
+			pr_err("did not get the %s %s\n",of_name,__FUNCTION__);
+			return ;
+		}
+		platdev->resource[1].start=irq_of_parse_and_map(get_node, 0);
+		platdev->resource[1].end=irq_of_parse_and_map(get_node, 1);
+	}
+	return ;
+}
 
 void __init s3c24xx_init_uartdevs(char *name,
 				  struct s3c24xx_uart_resources *res,
@@ -109,20 +138,14 @@ void __init s3c24xx_init_uartdevs(char *name,
 	struct s3c2410_uartcfg *cfgptr = uart_cfgs;
 	struct s3c24xx_uart_resources *resp;
 	int uart;
-
 	memcpy(cfgptr, cfg, sizeof(struct s3c2410_uartcfg) * no);
-
 	for (uart = 0; uart < no; uart++, cfg++, cfgptr++) {
 		platdev = s3c24xx_uart_src[cfgptr->hwport];
-
 		resp = res + cfgptr->hwport;
-
 		s3c24xx_uart_devs[uart] = platdev;
-
 		platdev->name = name;
 		platdev->resource = resp->resources;
 		platdev->num_resources = resp->nr_resources;
-
 		platdev->dev.platform_data = cfgptr;
 	}
 
@@ -152,7 +175,7 @@ static int __init s3c_arch_init(void)
 	ret = (cpu->init)();
 	if (ret != 0)
 		return ret;
-
+	s3c24xx_init_uartdevs_later_of();
 	ret = platform_add_devices(s3c24xx_uart_devs, nr_uarts);
 	return ret;
 }

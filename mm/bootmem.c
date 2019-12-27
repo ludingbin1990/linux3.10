@@ -295,9 +295,6 @@ static void __init __free(bootmem_data_t *bdata,
 {
 	unsigned long idx;
 
-	pr_err("__free  nid=%td start=%lx end=%lx\n", bdata - bootmem_node_data,
-		sidx + bdata->node_min_pfn,
-		eidx + bdata->node_min_pfn);
 
 	if (bdata->hint_idx > sidx)
 		bdata->hint_idx = sidx;
@@ -312,12 +309,6 @@ static int __init __reserve(bootmem_data_t *bdata, unsigned long sidx,
 {
 	unsigned long idx;
 	int exclusive = flags & BOOTMEM_EXCLUSIVE;
-
-	pr_err("__reserve    nid=%td start=%lx end=%lx flags=%x\n",
-		bdata - bootmem_node_data,
-		sidx + bdata->node_min_pfn,
-		eidx + bdata->node_min_pfn,
-		flags);
 
 	for (idx = sidx; idx < eidx; idx++)
 		if (test_and_set_bit(idx, bdata->node_bootmem_map)) {
@@ -337,8 +328,6 @@ static int __init mark_bootmem_node(bootmem_data_t *bdata,
 {
 	unsigned long sidx, eidx;
 
-	pr_err("nid=%td start=%lx end=%lx reserve=%d flags=%x\n",
-		bdata - bootmem_node_data, start, end, reserve, flags);
 
 	BUG_ON(start < bdata->node_min_pfn);
 	BUG_ON(end > bdata->node_low_pfn);

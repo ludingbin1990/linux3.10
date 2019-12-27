@@ -277,7 +277,8 @@ static void __init samsung_clockevent_init(void)
 	time_event_device.cpumask = cpumask_of(0);
 	clockevents_config_and_register(&time_event_device, clock_rate, 1, -1);
 
-	irq_number = timer_source.event_id + IRQ_TIMER0;
+	//irq_number = timer_source.event_id + IRQ_TIMER0;
+	irq_number=s3c_device_timer[timer_source.event_id].resource[0].start;
 	setup_irq(irq_number, &samsung_clock_event_irq);
 }
 
@@ -385,9 +386,32 @@ static void __init samsung_timer_resources(void)
 
 	clk_enable(tin_source);
 }
-
+extern struct device_node *of_find_node_by_path(const char *path);
+extern struct device_node *of_get_child_by_name(const struct device_node *node,
+				const char *name);
+extern unsigned int irq_of_parse_and_map(struct device_node *dev, int index);
+#define TIMER_MAX 5
+void __init samsung_use_of_int_timer_device(void){
+	struct device_node *root,*get_node;
+	int timer_count=0;
+	unsigned char of_name[20];
+	root = of_find_node_by_path("/");
+	if(!root)
+		pr_err("did not get the  root %s\n",__FUNCTION__);
+	memset(of_name,0,sizeof(of_name));
+	for(;timer_count<TIMER_MAX;timer_count++){
+		sprintf(of_name,"timer%d",timer_count);
+		get_node=of_get_child_by_name(root,of_name);
+		if(!get_node){
+			pr_err("did not get the  %s %s\n",of_name,__FUNCTION__);
+			return ;
+		}
+		s3c_device_timer[timer_count].resource[0].start=s3c_device_timer[timer_count].resource[0].end=irq_of_parse_and_map(get_node, 0);
+	}
+}
 void __init samsung_timer_init(void)
 {
+	samsung_use_of_int_timer_device();
 	samsung_timer_resources();
 	samsung_clockevent_init();
 	samsung_clocksource_init();

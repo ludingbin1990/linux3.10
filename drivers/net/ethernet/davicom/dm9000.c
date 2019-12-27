@@ -39,7 +39,7 @@
 #include <asm/delay.h>
 #include <asm/irq.h>
 #include <asm/io.h>
-
+#include <linux/of.h>
 #include "dm9000.h"
 
 /* Board/System/Debug information/definition ---------------- */
@@ -1372,7 +1372,6 @@ dm9000_probe(struct platform_device *pdev)
 	int iosize;
 	int i;
 	u32 id_val;
-
 	/* Init network device */
 	ndev = alloc_etherdev(sizeof(struct board_info));
 	if (!ndev)
@@ -1392,7 +1391,6 @@ dm9000_probe(struct platform_device *pdev)
 	mutex_init(&db->addr_lock);
 
 	INIT_DELAYED_WORK(&db->phy_poll, dm9000_poll_work);
-
 	db->addr_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	db->data_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	db->irq_res  = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
@@ -1682,12 +1680,19 @@ dm9000_drv_remove(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "released and freed device\n");
 	return 0;
 }
-
+#ifdef CONFIG_OF
+static const struct of_device_id eth_id_table[] = {
+	{ .compatible = "dv,dm9000" },
+	{}
+};
+MODULE_DEVICE_TABLE(of, sdhci_spear_id_table);
+#endif
 static struct platform_driver dm9000_driver = {
 	.driver	= {
 		.name    = "dm9000",
 		.owner	 = THIS_MODULE,
 		.pm	 = &dm9000_drv_pm_ops,
+		.of_match_table = of_match_ptr(eth_id_table),
 	},
 	.probe   = dm9000_probe,
 	.remove  = dm9000_drv_remove,

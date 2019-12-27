@@ -83,7 +83,7 @@ struct s3c_irq_intc {
  * [2] ... main_intc2 on s3c2416
  */
 static struct s3c_irq_intc *s3c_intc[3];
-
+extern int __init s3c2440_init_intc_of(struct device_node *node,struct device_node *parent);
 static void s3c_irq_mask(struct irq_data *data)
 {
 	struct s3c_irq_data *irq_data = irq_data_get_irq_chip_data(data);
@@ -117,13 +117,12 @@ static void s3c_irq_unmask(struct irq_data *data)
 	struct s3c_irq_data *irq_data = irq_data_get_irq_chip_data(data);
 	struct s3c_irq_intc *intc = irq_data->intc;
 	struct s3c_irq_intc *parent_intc = intc->parent;
-	unsigned long mask;
+	unsigned int mask;
 	unsigned int irqno;
-
 	mask = __raw_readl(intc->reg_mask);
 	mask &= ~(1UL << irq_data->offset);
 	__raw_writel(mask, intc->reg_mask);
-
+	mask = __raw_readl(intc->reg_mask);
 	if (parent_intc) {
 		irqno = irq_find_mapping(parent_intc->domain,
 					 irq_data->parent_irq);
@@ -381,6 +380,16 @@ asmlinkage void __exception_irq_entry s3c24xx_handle_irq(struct pt_regs *regs)
 			if (s3c24xx_handle_intc(s3c_intc[2], regs, 64))
 				continue;
 
+		break;
+	} while (1);
+}
+
+asmlinkage void __exception_irq_entry s3c24xx_handle_irq_new(struct pt_regs *regs)
+{
+	do {
+		if (likely(s3c_intc[0]))
+			if (s3c24xx_handle_intc(s3c_intc[0], regs, 0))
+				continue;
 		break;
 	} while (1);
 }
@@ -972,11 +981,16 @@ static struct s3c_irq_data init_s3c2440subint[32] = {
 	{ .type = S3C_IRQTYPE_LEVEL, .parent_irq = 9 }, /* WDT */
 	{ .type = S3C_IRQTYPE_LEVEL, .parent_irq = 9 }, /* AC97 */
 };
-
+static struct of_device_id irq_of_match[] __initconst = {
+	{ .compatible = "samsung,s3c2440-irq", .data = s3c2440_init_intc_of },
+	{ }
+};
 void __init s3c2440_init_irq(void)
 {
 	pr_info("S3C2440: IRQ Support\n");
-
+#ifdef CONFIG_OF
+	of_irq_init(irq_of_match);
+#else
 #ifdef CONFIG_FIQ
 	init_FIQ(FIQ_START);
 #endif
@@ -991,6 +1005,7 @@ void __init s3c2440_init_irq(void)
 	s3c24xx_init_intc(NULL, &init_eint[0], s3c_intc[0], 0x560000a4);
 	s3c_intc[1] = s3c24xx_init_intc(NULL, &init_s3c2440subint[0],
 					s3c_intc[0], 0x4a000018);
+#endif
 }
 #endif
 
@@ -1166,7 +1181,6 @@ static int s3c24xx_irq_map_of(struct irq_domain *h, unsigned int virq,
 	struct s3c_irq_intc *intc = s3c_intc[ctrl_num];
 	struct s3c_irq_intc *parent_intc = intc->parent;
 	struct s3c_irq_data *irq_data = &intc->irqs[intc_hw];
-
 	/* attach controller pointer to irq_data */
 	irq_data->intc = intc;
 	irq_data->offset = intc_hw;
@@ -1200,15 +1214,15 @@ static int s3c24xx_irq_xlate_of(struct irq_domain *d, struct device_node *n,
 	if (WARN_ON(intsize < 4))
 		return -EINVAL;
 
-	if (intspec[0] > 2 || !s3c_intc[intspec[0]]) {
+	if (intspec[0] > 3 || !s3c_intc[intspec[0]]) {
 		pr_err("controller number %d invalid\n", intspec[0]);
 		return -EINVAL;
 	}
 	intc = s3c_intc[intspec[0]];
 
 	*out_hwirq = intspec[0] * 32 + intspec[2];
-	*out_type = intspec[3] & IRQ_TYPE_SENSE_MASK;
-
+//	*out_type = intspec[3] & IRQ_TYPE_SENSE_MASK;
+	*out_type = intspec[3];
 	parent_intc = intc->parent;
 	if (parent_intc) {
 		irq_data = &intc->irqs[intspec[2]];
@@ -1223,10 +1237,8 @@ static int s3c24xx_irq_xlate_of(struct irq_domain *d, struct device_node *n,
 			pr_err("irq: could not map parent interrupt\n");
 			return irqno;
 		}
-
 		irq_set_chained_handler(irqno, s3c_irq_demux);
 	}
-
 	return 0;
 }
 
@@ -1242,7 +1254,6 @@ struct s3c24xx_irq_of_ctrl {
 	struct s3c_irq_intc	**parent;
 	struct irq_domain_ops	*ops;
 };
-
 static int __init s3c_init_intc_of(struct device_node *np,
 			struct device_node *interrupt_parent,
 			struct s3c24xx_irq_of_ctrl *s3c_ctrl, int num_ctrl)
@@ -1311,6 +1322,64 @@ static int __init s3c_init_intc_of(struct device_node *np,
 	return 0;
 }
 
+//add this function use the sub interuput in the device tree
+static int __init s3c_init_intc_of_new(struct device_node *np,
+			struct device_node *interrupt_parent)
+{
+	struct s3c_irq_intc *intc=NULL;
+	struct s3c_irq_intc *parent_intc=NULL;
+	static int count_intc=1;
+	struct irq_domain *domain,*parent_domain;
+	void __iomem *reg_base;
+	reg_base = of_iomap(np, 0);
+	if (!reg_base) {
+		pr_err("irq-s3c24xx: could not map irq registers\n");
+		return -EINVAL;
+	}
+	if(interrupt_parent){
+		parent_domain=irq_find_host(interrupt_parent);
+		if(parent_domain){
+			parent_intc=parent_domain->host_data;
+			pr_err("find the parent intc\n");
+		}
+	}
+	domain = irq_domain_add_linear(np, 256,&s3c24xx_irq_ops_of, NULL);
+	if (!domain) {
+		pr_err("irq: could not create irq-domain\n");
+		return -EINVAL;
+	}
+	intc = kzalloc(sizeof(struct s3c_irq_intc), GFP_KERNEL);
+	if (!intc)
+		return -ENOMEM;
+	intc->domain = domain;
+	domain->host_data=intc;
+	intc->irqs = kzalloc(sizeof(struct s3c_irq_data) * 32,GFP_KERNEL);
+	if (!intc->irqs) {
+		kfree(intc);
+		return -ENOMEM;
+	}
+	if (parent_intc) {
+		intc->reg_pending = reg_base;
+		intc->reg_mask = reg_base +0x4;
+		intc->parent = parent_intc;
+	} else {
+		intc->reg_pending = reg_base;
+		intc->reg_mask = reg_base + 0x08;
+		intc->reg_intpnd = reg_base + 0x10;
+	}
+	s3c24xx_clear_intc(intc);
+	if(!parent_intc){
+		s3c_intc[0]=intc;
+	}
+	else{
+		s3c_intc[count_intc] = intc;
+		count_intc++;
+		
+	}
+	set_handle_irq(s3c24xx_handle_irq_new);
+	return 0;
+}
+
 static struct s3c24xx_irq_of_ctrl s3c2410_ctrl[] = {
 	{
 		.name = "intc",
@@ -1328,6 +1397,12 @@ int __init s3c2410_init_intc_of(struct device_node *np,
 {
 	return s3c_init_intc_of(np, interrupt_parent,
 				s3c2410_ctrl, ARRAY_SIZE(s3c2410_ctrl));
+}
+
+int __init s3c2440_init_intc_of(struct device_node *node,
+	struct device_node *parent)
+{
+	return s3c_init_intc_of_new(node, parent);
 }
 IRQCHIP_DECLARE(s3c2410_irq, "samsung,s3c2410-irq", s3c2410_init_intc_of);
 
