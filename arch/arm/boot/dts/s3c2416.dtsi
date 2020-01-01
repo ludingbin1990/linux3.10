@@ -23,7 +23,7 @@
 		compatible = "samsung,s3c2440-irq";
 	};
 	/*second interrupt-controller */
-	subintc:sub-interrupt-controller@4a000000 {
+	subintc:sub-interrupt-controller@4a000018 {
 		compatible = "samsung,s3c2440-irq";
 		interrupt-parent = <&intc>;
 		reg = <0x4a000018 0x40>;
@@ -31,7 +31,7 @@
 		interrupt-controller;
 	};
 	/*thrid interrupt-controller */
-	extintc:ext-interrupt-controller@4a000000 {
+	extintc:ext-interrupt-controller@560000A4 {
 		compatible = "samsung,s3c2440-irq";
 		interrupt-parent = <&intc>;
 		reg = <0x560000A4 0x40>;

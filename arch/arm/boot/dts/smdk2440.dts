@@ -41,7 +41,7 @@ uart and timer setting just use the interrupt innformation,the other platform de
 		compatible = "dv,dm9000";
 		interrupt-parent = <&extintc>;
 		reg = <0x20000000 0x4>,<0x20000004 0x4>;
-		interrupts = <0 4 7 1>;
+		interrupts = <2 4 7 1>;
 	};
 	uart0: serial0@50000000 {
 		compatible = "samsung,2440-uart";

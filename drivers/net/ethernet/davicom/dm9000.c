@@ -889,6 +889,26 @@ dm9000_init_dm9000(struct net_device *dev)
 	/* I/O mode */
 	db->io_mode = ior(db, DM9000_ISR) >> 6;	/* ISR bit7:6 keeps I/O mode */
 
+	switch (db->io_mode) {
+	case 0x0:  /* 16-bit mode */
+		pr_err("DM9000: running in 16 bit mode\n");
+		dm9000_set_io(db, 2);
+		break;
+	case 0x01:  /* 32-bit mode */
+		pr_err("DM9000: running in 32 bit mode\n");
+		dm9000_set_io(db, 4);
+		break;
+	case 0x02: /* 8 bit mode */
+		pr_err("DM9000: running in 8 bit mode\n");
+		dm9000_set_io(db, 1);
+		break;
+	default:
+		/* Assume 8 bit mode, will probably not work anyway */
+		pr_err("DM9000: Undefined IO-mode:0x%x\n", db->io_mode);
+		dm9000_set_io(db, 1);
+		break;
+	}
+
 	/* Checksum mode */
 	if (dev->hw_features & NETIF_F_RXCSUM)
 		iow(db, DM9000_RCSR,
@@ -1168,7 +1188,6 @@ static irqreturn_t dm9000_interrupt(int irq, void *dev_id)
 	int int_status;
 	unsigned long flags;
 	u8 reg_save;
-
 	dm9000_dbg(db, 3, "entering %s\n", __func__);
 
 	/* A real interrupt coming */
@@ -1221,12 +1240,11 @@ static irqreturn_t dm9000_wol_interrupt(int irq, void *dev_id)
 	board_info_t *db = netdev_priv(dev);
 	unsigned long flags;
 	unsigned nsr, wcr;
-
 	spin_lock_irqsave(&db->lock, flags);
 
 	nsr = ior(db, DM9000_NSR);
 	wcr = ior(db, DM9000_WCR);
-
+	
 	dev_dbg(db->dev, "%s: NSR=0x%02x, WCR=0x%02x\n", __func__, nsr, wcr);
 
 	if (nsr & NSR_WAKEST) {
@@ -1271,13 +1289,11 @@ dm9000_open(struct net_device *dev)
 {
 	board_info_t *db = netdev_priv(dev);
 	unsigned long irqflags = db->irq_res->flags & IRQF_TRIGGER_MASK;
-
 	if (netif_msg_ifup(db))
 		dev_dbg(db->dev, "enabling %s\n", dev->name);
 
 	/* If there is no IRQ type specified, default to something that
 	 * may work, and tell the user that this is a problem */
-
 	if (irqflags == IRQF_TRIGGER_NONE)
 		dev_warn(db->dev, "WARNING: no IRQ resource flags set.\n");
 
@@ -1290,13 +1306,10 @@ dm9000_open(struct net_device *dev)
 	/* Initialize DM9000 board */
 	dm9000_reset(db);
 	dm9000_init_dm9000(dev);
-
 	if (request_irq(dev->irq, dm9000_interrupt, irqflags, dev->name, dev))
 		return -EAGAIN;
-
 	/* Init driver variable */
 	db->dbug_cnt = 0;
-
 	mii_check_media(&db->mii, netif_msg_link(db), 1);
 	netif_start_queue(dev);
 	
@@ -1394,7 +1407,7 @@ dm9000_probe(struct platform_device *pdev)
 	db->addr_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	db->data_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	db->irq_res  = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
-
+	db->flags=DM9000_PLATF_NO_EEPROM;
 	if (db->addr_res == NULL || db->data_res == NULL ||
 	    db->irq_res == NULL) {
 		dev_err(db->dev, "insufficient resources\n");
@@ -1469,6 +1482,7 @@ dm9000_probe(struct platform_device *pdev)
 	dm9000_set_io(db, iosize);
 
 	/* check to see if anything is being over-ridden */
+	
 	if (pdata != NULL) {
 		/* check to see if the driver wants to over-ride the
 		 * default IO width */
@@ -1685,7 +1699,6 @@ static const struct of_device_id eth_id_table[] = {
 	{ .compatible = "dv,dm9000" },
 	{}
 };
-MODULE_DEVICE_TABLE(of, sdhci_spear_id_table);
 #endif
 static struct platform_driver dm9000_driver = {
 	.driver	= {
