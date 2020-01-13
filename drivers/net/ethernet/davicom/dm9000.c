@@ -193,17 +193,25 @@ iow(board_info_t * db, int reg, int value)
 
 static void dm9000_outblk_8bit(void __iomem *reg, void *data, int count)
 {
-	iowrite8_rep(reg, data, count);
+	int i=0;
+	for(;i<count;i++)
+		(*(volatile u8 *)(reg)) = *(((u8 *)data)+i);
 }
-
 static void dm9000_outblk_16bit(void __iomem *reg, void *data, int count)
 {
-	iowrite16_rep(reg, data, (count+1) >> 1);
+	int i=0;
+	count=(count+1) >> 1;
+        for(;i<count;i++)
+		(*(volatile u16 *)(reg)) = *(((u16 *)data)+i);
 }
 
 static void dm9000_outblk_32bit(void __iomem *reg, void *data, int count)
 {
-	iowrite32_rep(reg, data, (count+3) >> 2);
+	int i=0;
+	count=(count+3) >> 2;
+        for(;i<count;i++)
+		(*(volatile u32 *)(reg)) = *(((u32 *)data)+i);
+	
 }
 
 /* input block from chip to memory */
@@ -883,12 +891,10 @@ dm9000_init_dm9000(struct net_device *dev)
 	board_info_t *db = netdev_priv(dev);
 	unsigned int imr;
 	unsigned int ncr;
-
 	dm9000_dbg(db, 1, "entering %s\n", __func__);
 
 	/* I/O mode */
 	db->io_mode = ior(db, DM9000_ISR) >> 6;	/* ISR bit7:6 keeps I/O mode */
-
 	switch (db->io_mode) {
 	case 0x0:  /* 16-bit mode */
 		pr_err("DM9000: running in 16 bit mode\n");
@@ -930,7 +936,7 @@ dm9000_init_dm9000(struct net_device *dev)
 	iow(db, DM9000_NCR, ncr);
 
 	/* Program operating register */
-	iow(db, DM9000_TCR, 0);	        /* TX Polling clear */
+	iow(db, DM9000_TCR, 0);         /* TX Polling clear */
 	iow(db, DM9000_BPTR, 0x3f);	/* Less 3Kb, 200us */
 	iow(db, DM9000_FCR, 0xff);	/* Flow Control */
 	iow(db, DM9000_SMCR, 0);        /* Special Mode */
@@ -999,32 +1005,29 @@ static void dm9000_send_packet(struct net_device *dev,
 	iow(dm, DM9000_TXPLH, pkt_len >> 8);
 
 	/* Issue TX polling command */
-	iow(dm, DM9000_TCR, TCR_TXREQ);	/* Cleared after TX complete */
+	iow(dm, DM9000_TCR, TCR_TXREQ); /* Cleared after TX complete */
 }
 
 /*
  *  Hardware start transmission.
  *  Send a packet to media from the upper layer.
  */
+
 static int
 dm9000_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	unsigned long flags;
 	board_info_t *db = netdev_priv(dev);
-
 	dm9000_dbg(db, 3, "%s:\n", __func__);
-
 	if (db->tx_pkt_cnt > 1)
 		return NETDEV_TX_BUSY;
 
 	spin_lock_irqsave(&db->lock, flags);
-
 	/* Move data to DM9000 TX RAM */
 	writeb(DM9000_MWCMD, db->io_addr);
 
 	(db->outblk)(db->io_data, skb->data, skb->len);
 	dev->stats.tx_bytes += skb->len;
-
 	db->tx_pkt_cnt++;
 	/* TX control: First packet immediately send, second packet queue */
 	if (db->tx_pkt_cnt == 1) {
@@ -1059,7 +1062,7 @@ static void dm9000_tx_done(struct net_device *dev, board_info_t *db)
 		dev->stats.tx_packets++;
 
 		if (netif_msg_tx_done(db))
-			dev_dbg(db->dev, "tx done, NSR %02x\n", tx_status);
+			pr_err("tx done, NSR %02x\n", tx_status);
 
 		/* Queue packet check & send */
 		if (db->tx_pkt_cnt > 0)
@@ -1213,8 +1216,9 @@ static irqreturn_t dm9000_interrupt(int irq, void *dev_id)
 		dm9000_rx(dev);
 
 	/* Trnasmit Interrupt check */
-	if (int_status & ISR_PTS)
+	if (int_status & ISR_PTS){
 		dm9000_tx_done(dev, db);
+	}
 
 	if (db->type != TYPE_DM9000E) {
 		if (int_status & ISR_LNKCHNG) {
@@ -1245,18 +1249,18 @@ static irqreturn_t dm9000_wol_interrupt(int irq, void *dev_id)
 	nsr = ior(db, DM9000_NSR);
 	wcr = ior(db, DM9000_WCR);
 	
-	dev_dbg(db->dev, "%s: NSR=0x%02x, WCR=0x%02x\n", __func__, nsr, wcr);
+	pr_err("%s: NSR=0x%02x, WCR=0x%02x\n", __func__, nsr, wcr);
 
 	if (nsr & NSR_WAKEST) {
 		/* clear, so we can avoid */
 		iow(db, DM9000_NSR, NSR_WAKEST);
 
 		if (wcr & WCR_LINKST)
-			dev_info(db->dev, "wake by link status change\n");
+			pr_err("wake by link status change\n");
 		if (wcr & WCR_SAMPLEST)
-			dev_info(db->dev, "wake by sample packet\n");
+			pr_err("wake by sample packet\n");
 		if (wcr & WCR_MAGICST )
-			dev_info(db->dev, "wake by magic packet\n");
+			pr_err("wake by magic packet\n");
 		if (!(wcr & (WCR_LINKST | WCR_SAMPLEST | WCR_MAGICST)))
 			dev_err(db->dev, "wake signalled with no reason? "
 				"NSR=0x%02x, WSR=0x%02x\n", nsr, wcr);
@@ -1437,7 +1441,6 @@ dm9000_probe(struct platform_device *pdev)
 			}
 		}
 	}
-
 	iosize = resource_size(db->addr_res);
 	db->addr_req = request_mem_region(db->addr_res->start, iosize,
 					  pdev->name);
@@ -1447,9 +1450,8 @@ dm9000_probe(struct platform_device *pdev)
 		ret = -EIO;
 		goto out;
 	}
-
 	db->io_addr = ioremap(db->addr_res->start, iosize);
-
+	
 	if (db->io_addr == NULL) {
 		dev_err(db->dev, "failed to ioremap address reg\n");
 		ret = -EINVAL;
@@ -1465,7 +1467,6 @@ dm9000_probe(struct platform_device *pdev)
 		ret = -EIO;
 		goto out;
 	}
-
 	db->io_data = ioremap(db->data_res->start, iosize);
 
 	if (db->io_data == NULL) {
@@ -1480,7 +1481,6 @@ dm9000_probe(struct platform_device *pdev)
 
 	/* ensure at least we have a default set of IO routines */
 	dm9000_set_io(db, iosize);
-
 	/* check to see if anything is being over-ridden */
 	
 	if (pdata != NULL) {
