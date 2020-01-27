@@ -65,6 +65,12 @@ uart and timer setting just use the interrupt innformation,the other platform de
 		interrupts = <1 15 6 4>,<1 15 7 4>;
 		status = "okay";
 	};
+	lcd0@4d000000 {
+		compatible = "s3c,td35";
+		interrupt-parent = <&intc>;
+		reg = <0x4d000000 0x80>;
+		interrupts = <0 16 0 1>;
+	};
 };
 /*
 &rtc {
