@@ -31,11 +31,12 @@ struct s3c_camif_sensor_info {
 	u16 flags;
 	u8 use_field;
 };
-
+#define NAME_MAX_LENGTH 20
 struct s3c_camif_plat_data {
 	struct s3c_camif_sensor_info sensor;
 	int (*gpio_get)(void);
 	int (*gpio_put)(void);
+	char sensor_name[NAME_MAX_LENGTH];
 };
 
 /* Platform default helper functions */

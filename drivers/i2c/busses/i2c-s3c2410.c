@@ -116,6 +116,7 @@ struct s3c24xx_i2c {
 	unsigned long		clkrate;
 
 	void __iomem		*regs;
+	void __iomem		*i2c_gpio_regs;
 	struct clk		*clk;
 	struct device		*dev;
 	struct i2c_adapter	adap;
@@ -203,8 +204,8 @@ static inline void s3c24xx_i2c_enable_ack(struct s3c24xx_i2c *i2c)
 {
 	unsigned long tmp;
 
-	tmp = readl(i2c->regs + S3C2410_IICCON);
-	writel(tmp | S3C2410_IICCON_ACKEN, i2c->regs + S3C2410_IICCON);
+	tmp = *((volatile u32 *)(i2c->regs + S3C2410_IICCON));
+	*((volatile u32 *)(i2c->regs + S3C2410_IICCON))=tmp | S3C2410_IICCON_ACKEN;
 }
 
 /* irq enable/disable functions */
@@ -230,7 +231,6 @@ static inline void s3c24xx_i2c_enable_irq(struct s3c24xx_i2c *i2c)
  *
  * put the start of a message onto the bus
 */
-
 static void s3c24xx_i2c_message_start(struct s3c24xx_i2c *i2c,
 				      struct i2c_msg *msg)
 {
@@ -253,11 +253,11 @@ static void s3c24xx_i2c_message_start(struct s3c24xx_i2c *i2c,
 	/* todo - check for whether ack wanted or not */
 	s3c24xx_i2c_enable_ack(i2c);
 
-	iiccon = readl(i2c->regs + S3C2410_IICCON);
-	writel(stat, i2c->regs + S3C2410_IICSTAT);
+	iiccon = *((volatile u32 *)(i2c->regs + S3C2410_IICCON));
+	*((volatile u32 *)(i2c->regs + S3C2410_IICSTAT))=stat;
 
 	dev_dbg(i2c->dev, "START: %08lx to IICSTAT, %02x to DS\n", stat, addr);
-	writeb(addr, i2c->regs + S3C2410_IICDS);
+	*((volatile u32 *)(i2c->regs + S3C2410_IICDS))=addr;
 
 	/* delay here to ensure the data byte has gotten onto the bus
 	 * before the transaction is started */
@@ -265,10 +265,10 @@ static void s3c24xx_i2c_message_start(struct s3c24xx_i2c *i2c,
 	ndelay(i2c->tx_setup);
 
 	dev_dbg(i2c->dev, "iiccon, %08lx\n", iiccon);
-	writel(iiccon, i2c->regs + S3C2410_IICCON);
+	*((volatile u32 *)(i2c->regs + S3C2410_IICCON))=iiccon;
 
 	stat |= S3C2410_IICSTAT_START;
-	writel(stat, i2c->regs + S3C2410_IICSTAT);
+	*((volatile u32 *)(i2c->regs + S3C2410_IICSTAT))=stat;
 }
 
 static inline void s3c24xx_i2c_stop(struct s3c24xx_i2c *i2c, int ret)
@@ -1024,7 +1024,27 @@ s3c24xx_i2c_parse_dt(struct device_node *np, struct s3c24xx_i2c *i2c)
  *
  * called by the bus driver when a suitable device is found
 */
-
+#define GPECON 0
+#define GPEUP 0x8
+void s3c2440_init_gpio(struct s3c24xx_i2c *i2c)
+{
+	unsigned int tmp_value;
+	i2c->i2c_gpio_regs=ioremap(0x56000040,0x10);
+	if(!i2c->i2c_gpio_regs)
+		return ;
+	tmp_value=*((volatile u32 *)(i2c->i2c_gpio_regs+GPECON));
+	tmp_value=(tmp_value&(~(0xf<<28)))|(0xa<<28);
+	*((volatile u32 *)(i2c->i2c_gpio_regs+GPECON))=tmp_value;
+	
+	tmp_value=*((volatile u32 *)(i2c->i2c_gpio_regs+GPEUP));
+	tmp_value=tmp_value|(3<<14);
+	*((volatile u32 *)(i2c->i2c_gpio_regs+GPEUP))=tmp_value;
+}
+void s3c2440_uninit_gpio(struct s3c24xx_i2c *i2c)
+{
+	if(i2c->i2c_gpio_regs)
+		iounmap(i2c->i2c_gpio_regs);
+}
 static int s3c24xx_i2c_probe(struct platform_device *pdev)
 {
 	struct s3c24xx_i2c *i2c;
@@ -1078,7 +1098,6 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "clock source %p\n", i2c->clk);
 
-
 	/* map the registers */
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -1103,6 +1122,8 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 		i2c->pdata->cfg_gpio(to_platform_device(i2c->dev));
 	} else if (IS_ERR(i2c->pctrl) && s3c24xx_i2c_parse_dt_gpio(i2c)) {
 		return -EINVAL;
+	}else{
+		s3c2440_init_gpio(i2c);
 	}
 
 	/* initialise the i2c controller */
@@ -1172,7 +1193,7 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 static int s3c24xx_i2c_remove(struct platform_device *pdev)
 {
 	struct s3c24xx_i2c *i2c = platform_get_drvdata(pdev);
-
+	s3c2440_uninit_gpio(i2c);
 	pm_runtime_disable(&i2c->adap.dev);
 	pm_runtime_disable(&pdev->dev);
 

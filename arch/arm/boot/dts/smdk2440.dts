@@ -12,7 +12,9 @@ interrupt controller
 1 main controller:intc
 2 sub controller:sub-intc
 3 sub controller:extrn-intc
-#interrupt-cells = <0x4>;  <controller-number   main-controller-irq-number   sub-controller-number   Interrupt-trigger-type>
+#interrupt-cells = <0x4>;  
+if use the main-controller interrupt,then set as <controller-number   0   main-controller-number   Interrupt-trigger-type>
+if use the sub&ext-controller interrupt,then set as  <controller-number   main-controller-irq-number   sub-controller-number   Interrupt-trigger-type>
 uart and timer setting just use the interrupt innformation,the other platform device information is static in the code
 */
 /dts-v1/;
@@ -69,8 +71,33 @@ uart and timer setting just use the interrupt innformation,the other platform de
 		compatible = "s3c,td35";
 		interrupt-parent = <&intc>;
 		reg = <0x4d000000 0x80>;
-		interrupts = <0 16 0 1>;
+		interrupts = <0 0 16 1>;
 	};
+	
+	camif0@4F000000 {
+		compatible = "samsung,s3c2440-camif";
+		interrupt-parent = <&subintc>;
+		reg = <0x4F000000 0x1000>;
+		interrupts = <1 6 11 4>,<1 6 12 4>;
+		sensor_name="ov9650";
+	};
+	i2c0: i2c@54000000 {
+		compatible = "samsung,s3c2440-i2c";
+		interrupt-parent = <&intc>;
+		reg = <0x54000000 0x100>;
+		interrupts = <0 0 27 1>;
+		#address-cells = <1>;
+    		#size-cells = <0>;
+		samsung,i2c-sda-delay=<40>; //delay 40 pclk
+		samsung,i2c-slave-addr=<0x70>;
+		samsung,i2c-max-bus-freq=<5000>;  //10khz,i2c clock
+		ov9650@60 {
+			compatible = "ov9650";
+			reg=<0x30>;  //ov9650 addr is 0x60,but in the i2c driver,the addr will <<1,so set 0x30 here
+			clock_frequency=<24000000>;  //cammera frequency
+		};
+	};
+
 };
 /*
 &rtc {

@@ -41,8 +41,43 @@ static char *camif_clocks[CLK_MAX_NUM] = {
 	/* HCLK CAMIF clock */
 	[CLK_GATE]	= "camif",
 	/* CAMIF / external camera sensor master clock */
-	[CLK_CAM]	= "camera",
+	[CLK_CAM]	= "camif-upll",
 };
+
+static const struct s3c_camif_variant s3c244x_camif_variant = {
+	.vp_pix_limits = {
+		[VP_CODEC] = {
+			.max_out_width		= 4096,
+			.max_sc_out_width	= 2048,
+			.out_width_align	= 16,
+			.min_out_width		= 16,
+			.max_height		= 4096,
+		},
+		[VP_PREVIEW] = {
+			.max_out_width		= 640,
+			.max_sc_out_width	= 640,
+			.out_width_align	= 16,
+			.min_out_width		= 16,
+			.max_height		= 480,
+		}
+	},
+	.pix_limits = {
+		.win_hor_offset_align	= 8,
+	},
+	.ip_revision = S3C244X_CAMIF_IP_REV,
+};
+
+static struct s3c_camif_drvdata s3c244x_camif_drvdata = {
+	.variant	= &s3c244x_camif_variant,
+	.bus_clk_freq	= 24000000UL,
+};
+#ifdef CONFIG_OF
+static const struct of_device_id s3c24xx_camif_match[] = {
+	{ .compatible = "samsung,s3c2440-camif", .data = (void *)(&s3c244x_camif_drvdata)},
+	{},
+};
+MODULE_DEVICE_TABLE(of, s3c24xx_i2c_match);
+#endif
 
 static const struct camif_fmt camif_formats[] = {
 	{
@@ -225,7 +260,6 @@ static int camif_register_sensor(struct camif_dev *camif)
 	camif->sensor.sd = sd;
 
 	v4l2_info(v4l2_dev, "registered sensor subdevice %s\n", sd->name);
-
 	/* Get initial pixel format and set it at the camif sink pad */
 	format.pad = 0;
 	format.which = V4L2_SUBDEV_FORMAT_ACTIVE;
@@ -405,6 +439,71 @@ static int camif_request_irqs(struct platform_device *pdev,
 	return ret;
 }
 
+static struct list_head s3c_notify_v4l2_dev_list_head;
+static struct mutex	notify_lock;
+void add_notify_v4l2_dev(struct notify_v4l2_dev *notify_v4l2)
+{
+	mutex_lock(&notify_lock);
+	list_add_tail(&(notify_v4l2->v4l2_dev_list),&s3c_notify_v4l2_dev_list_head);
+	mutex_unlock(&notify_lock);
+}
+
+struct v4l2_device* get_notify_v4l2_dev(char *sensor_name)
+{
+	struct notify_v4l2_dev *dev_concur;
+	struct notify_v4l2_dev *get_match_dev=NULL;
+	struct notify_v4l2_dev *get_default_dev=NULL;
+	mutex_lock(&notify_lock);
+	list_for_each_entry(dev_concur,&s3c_notify_v4l2_dev_list_head,v4l2_dev_list){
+		if(!get_default_dev)
+			get_default_dev=dev_concur;
+		if(!strcmp(sensor_name,dev_concur->sensor_name)){
+			get_match_dev=dev_concur;
+			break;
+		}
+	}
+	mutex_unlock(&notify_lock);
+	if(get_match_dev)
+		return get_match_dev->v4l2_dev;
+	else
+		return get_default_dev->v4l2_dev;
+}
+
+void s3c_camif_bound_subdev(struct v4l2_device *v4l2_dev,
+				struct v4l2_subdev *sd,unsigned long frequency)
+{
+	struct camif_dev *camif=container_of(v4l2_dev, struct camif_dev, v4l2_dev);
+	struct v4l2_subdev_format format;
+	int ret;
+	camif->sensor.sd = sd;
+	v4l2_info(v4l2_dev, "registered sensor subdevice %s\n", sd->name);
+	if(!strcmp(sd->name,"OV9650")){
+		camif->pdata.sensor.flags |=V4L2_MBUS_PCLK_SAMPLE_FALLING;
+	}
+	/* Get initial pixel format and set it at the camif sink pad */
+	format.pad = 0;
+	format.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+	clk_set_rate(camif->clock[CLK_CAM],camif->pdata.sensor.clock_frequency);
+	clk_enable(camif->clock[CLK_CAM]);
+	clk_enable(camif->clock[CLK_GATE]);
+	ret = v4l2_subdev_call(sd, pad, get_fmt, NULL, &format);
+	if (ret < 0)
+		return ;
+	format.pad = CAMIF_SD_PAD_SINK;
+	v4l2_subdev_call(&camif->subdev, pad, set_fmt, NULL, &format);
+	v4l2_info(sd, "Initial format from sensor: %dx%d, %#x\n",
+		  format.format.width, format.format.height,
+		  format.format.code);
+	ret = media_entity_init(&camif->sensor.sd->entity, CAMIF_SD_PADS_NUM,
+				camif->pads, 0);
+	if (ret)
+		return ;
+	media_entity_create_link(&camif->sensor.sd->entity, 0,
+				&camif->subdev.entity, CAMIF_SD_PAD_SINK,
+				MEDIA_LNK_FL_IMMUTABLE |
+				MEDIA_LNK_FL_ENABLED);
+}
+
 static int s3c_camif_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -413,23 +512,36 @@ static int s3c_camif_probe(struct platform_device *pdev)
 	struct camif_dev *camif;
 	struct resource *mres;
 	int ret = 0;
-
+	int i;
+	char *sensor_name;
+	INIT_LIST_HEAD(&s3c_notify_v4l2_dev_list_head);
+	mutex_init(&notify_lock);
 	camif = devm_kzalloc(dev, sizeof(*camif), GFP_KERNEL);
 	if (!camif)
 		return -ENOMEM;
-
+	camif->notify_v4l2_device=devm_kzalloc(dev, sizeof(struct notify_v4l2_dev), GFP_KERNEL);
+	if (!camif->notify_v4l2_device)
+		return -ENOMEM;
 	spin_lock_init(&camif->slock);
 	mutex_init(&camif->lock);
-
 	camif->dev = dev;
-
+	#ifdef CONFIG_OF
+	if (pdev->dev.of_node) {
+		const struct of_device_id *match;
+		of_property_read_string(pdev->dev.of_node, "sensor_name", &sensor_name);
+		match = of_match_node(s3c24xx_camif_match, pdev->dev.of_node);
+		drvdata=(struct s3c_camif_drvdata *)match->data;
+	}else{
+		return -ENOMEM;
+	}
+	#else
 	if (!pdata || !pdata->gpio_get || !pdata->gpio_put) {
 		dev_err(dev, "wrong platform data\n");
 		return -EINVAL;
 	}
-
 	camif->pdata = *pdata;
 	drvdata = (void *)platform_get_device_id(pdev)->driver_data;
+	#endif
 	camif->variant = drvdata->variant;
 
 	mres = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -441,11 +553,9 @@ static int s3c_camif_probe(struct platform_device *pdev)
 	ret = camif_request_irqs(pdev, camif);
 	if (ret < 0)
 		return ret;
-
-	ret = pdata->gpio_get();
+	/*ret = pdata->gpio_get();
 	if (ret < 0)
-		return ret;
-
+		return ret;*/
 	ret = s3c_camif_create_subdev(camif);
 	if (ret < 0)
 		goto err_sd;
@@ -453,13 +563,8 @@ static int s3c_camif_probe(struct platform_device *pdev)
 	ret = camif_clk_get(camif);
 	if (ret < 0)
 		goto err_clk;
-
 	platform_set_drvdata(pdev, camif);
-	clk_set_rate(camif->clock[CLK_CAM],
-			camif->pdata.sensor.clock_frequency);
-
-	dev_info(dev, "sensor clock frequency: %lu\n",
-		 clk_get_rate(camif->clock[CLK_CAM]));
+	
 	/*
 	 * Set initial pixel format, resolution and crop rectangle.
 	 * Must be done before a sensor subdev is registered as some
@@ -484,10 +589,10 @@ static int s3c_camif_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_mdev;
 
-	ret = camif_register_sensor(camif);
+	/*ret = camif_register_sensor(camif);
 	if (ret < 0)
-		goto err_sens;
-
+		goto err_sens;*/
+	
 	ret = v4l2_device_register_subdev(&camif->v4l2_dev, &camif->subdev);
 	if (ret < 0)
 		goto err_sens;
@@ -501,11 +606,19 @@ static int s3c_camif_probe(struct platform_device *pdev)
 	ret = camif_register_video_nodes(camif);
 	if (ret < 0)
 		goto err_unlock;
-
-	ret = camif_create_media_links(camif);
+	strcpy(camif->notify_v4l2_device->sensor_name,sensor_name);
+	camif->notify_v4l2_device->v4l2_dev=&camif->v4l2_dev;
+	add_notify_v4l2_dev(camif->notify_v4l2_device);
+/*	ret = camif_create_media_links(camif);
 	if (ret < 0)
 		goto err_unlock;
-
+*/
+	for (i = 1; i < CAMIF_SD_PADS_NUM && !ret; i++) {
+		ret = media_entity_create_link(&camif->subdev.entity, i,
+				&camif->vp[i - 1].vdev.entity, 0,
+				MEDIA_LNK_FL_IMMUTABLE |
+				MEDIA_LNK_FL_ENABLED);
+	}
 	mutex_unlock(&camif->media_dev.graph_mutex);
 	pm_runtime_put(dev);
 	return 0;
@@ -534,14 +647,15 @@ static int s3c_camif_remove(struct platform_device *pdev)
 {
 	struct camif_dev *camif = platform_get_drvdata(pdev);
 	struct s3c_camif_plat_data *pdata = &camif->pdata;
-
+	if(camif->notify_v4l2_device)
+		devm_kfree(&pdev->dev,camif->notify_v4l2_device);
 	media_device_unregister(&camif->media_dev);
 	camif_unregister_media_entities(camif);
 	v4l2_device_unregister(&camif->v4l2_dev);
 
 	pm_runtime_disable(&pdev->dev);
 	camif_clk_put(camif);
-	pdata->gpio_put();
+	//pdata->gpio_put();
 
 	return 0;
 }
@@ -566,34 +680,6 @@ static int s3c_camif_runtime_suspend(struct device *dev)
 	clk_disable(camif->clock[CLK_GATE]);
 	return 0;
 }
-
-static const struct s3c_camif_variant s3c244x_camif_variant = {
-	.vp_pix_limits = {
-		[VP_CODEC] = {
-			.max_out_width		= 4096,
-			.max_sc_out_width	= 2048,
-			.out_width_align	= 16,
-			.min_out_width		= 16,
-			.max_height		= 4096,
-		},
-		[VP_PREVIEW] = {
-			.max_out_width		= 640,
-			.max_sc_out_width	= 640,
-			.out_width_align	= 16,
-			.min_out_width		= 16,
-			.max_height		= 480,
-		}
-	},
-	.pix_limits = {
-		.win_hor_offset_align	= 8,
-	},
-	.ip_revision = S3C244X_CAMIF_IP_REV,
-};
-
-static struct s3c_camif_drvdata s3c244x_camif_drvdata = {
-	.variant	= &s3c244x_camif_variant,
-	.bus_clk_freq	= 24000000UL,
-};
 
 static const struct s3c_camif_variant s3c6410_camif_variant = {
 	.vp_pix_limits = {
@@ -650,6 +736,7 @@ static struct platform_driver s3c_camif_driver = {
 		.name	= S3C_CAMIF_DRIVER_NAME,
 		.owner	= THIS_MODULE,
 		.pm	= &s3c_camif_pm_ops,
+		.of_match_table = of_match_ptr(s3c24xx_camif_match),
 	}
 };
 

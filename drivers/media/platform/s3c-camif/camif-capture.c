@@ -43,6 +43,31 @@
 static int debug;
 module_param(debug, int, 0644);
 
+#define MAX_DMA_REGISTERS 4
+static int get_free_dma_register_index(struct camif_vp *vp)
+{
+	int i=0;
+	for(;i<MAX_DMA_REGISTERS;i++)
+		if(!(vp->dma_register_bit_map&(1<<i)))
+			return i;
+	return 0;
+}
+
+static void set_used_dma_register_index(struct camif_vp *vp,int index)
+{
+	vp->dma_register_bit_map|=1<<index;
+}
+
+static void free_used_dma_register_index(struct camif_vp *vp,int index)
+{
+	vp->dma_register_bit_map&=(~(1<<index));
+}
+
+static void free_all_dma_register_index(struct camif_vp *vp)
+{
+	vp->dma_register_bit_map=0;
+}
+
 /* Locking: called with vp->camif->slock spinlock held */
 static void camif_cfg_video_path(struct camif_vp *vp)
 {
@@ -229,9 +254,14 @@ static int camif_stop_capture(struct camif_vp *vp)
 		/* Timed out, forcibly stop capture */
 		vp->state &= ~(ST_VP_OFF | ST_VP_ABORTING |
 			       ST_VP_LASTIRQ);
-
+		struct camif_buffer *buf;
+		free_all_dma_register_index(vp);
 		camif_hw_disable_capture(vp);
 		camif_hw_enable_scaler(vp, false);
+		while (!list_empty(&vp->active_buf_q)) {
+			buf = camif_active_queue_pop(vp);
+			vb2_buffer_done(&buf->vb, VB2_BUF_STATE_ERROR);
+		}
 	}
 
 	spin_unlock_irqrestore(&camif->slock, flags);
@@ -247,14 +277,10 @@ static int camif_prepare_addr(struct camif_vp *vp, struct vb2_buffer *vb,
 
 	if (vb == NULL || frame == NULL)
 		return -EINVAL;
-
 	pix_size = frame->rect.width * frame->rect.height;
-
 	pr_debug("colplanes: %d, pix_size: %u\n",
-		 vp->out_fmt->colplanes, pix_size);
-
+		vp->out_fmt->colplanes, pix_size);
 	paddr->y = vb2_dma_contig_plane_dma_addr(vb, 0);
-
 	switch (vp->out_fmt->colplanes) {
 	case 1:
 		paddr->cb = 0;
@@ -279,10 +305,8 @@ static int camif_prepare_addr(struct camif_vp *vp, struct vb2_buffer *vb,
 	default:
 		return -EINVAL;
 	}
-
 	pr_debug("DMA address: y: %#x  cb: %#x cr: %#x\n",
-		 paddr->y, paddr->cb, paddr->cr);
-
+                paddr->y, paddr->cb, paddr->cr);
 	return 0;
 }
 
@@ -313,10 +337,16 @@ irqreturn_t s3c_camif_irq_handler(int irq, void *priv)
 			wake_up(&vp->irq_queue);
 			goto unlock;
 		} else if (vp->state & ST_VP_LASTIRQ) {
+			struct camif_buffer *buf;
+			free_all_dma_register_index(vp);
 			camif_hw_disable_capture(vp);
 			camif_hw_enable_scaler(vp, false);
 			camif_hw_set_lastirq(vp, false);
 			vp->state |= ST_VP_OFF;
+			while (!list_empty(&vp->active_buf_q)) {
+				buf = camif_active_queue_pop(vp);
+				vb2_buffer_done(&buf->vb, VB2_BUF_STATE_ERROR);
+			}
 		} else {
 			/* Disable capture, enable last IRQ */
 			camif_hw_set_lastirq(vp, true);
@@ -326,7 +356,7 @@ irqreturn_t s3c_camif_irq_handler(int irq, void *priv)
 
 	if (!list_empty(&vp->pending_buf_q) && (vp->state & ST_VP_RUNNING) &&
 	    !list_empty(&vp->active_buf_q)) {
-		unsigned int index;
+		int index;
 		struct camif_buffer *vbuf;
 		struct timeval *tv;
 		struct timespec ts;
@@ -335,11 +365,12 @@ irqreturn_t s3c_camif_irq_handler(int irq, void *priv)
 		 * 0 => DMA buffer 0, 2;
 		 * 1 => DMA buffer 1, 3.
 		 */
-		index = (CISTATUS_FRAMECNT(status) + 2) & 1;
-
+		index=CISTATUS_FRAMECNT(status)-1;
+		if(index<0)
+			index=3;
 		ktime_get_ts(&ts);
 		vbuf = camif_active_queue_peek(vp, index);
-
+		free_used_dma_register_index(vp,index);
 		if (!WARN_ON(vbuf == NULL)) {
 			/* Dequeue a filled buffer */
 			tv = &vbuf->vb.v4l2_buf.timestamp;
@@ -350,10 +381,9 @@ irqreturn_t s3c_camif_irq_handler(int irq, void *priv)
 
 			/* Set up an empty buffer at the DMA engine */
 			vbuf = camif_pending_queue_pop(vp);
-			vbuf->index = index;
+			vbuf->index=index;
+			set_used_dma_register_index(vp,vbuf->index);
 			camif_hw_set_output_addr(vp, &vbuf->paddr, index);
-			camif_hw_set_output_addr(vp, &vbuf->paddr, index + 2);
-
 			/* Scheduled in H/W, add to the queue */
 			camif_active_queue_add(vp, vbuf);
 		}
@@ -384,7 +414,6 @@ static int start_streaming(struct vb2_queue *vq, unsigned int count)
 	struct camif_dev *camif = vp->camif;
 	unsigned long flags;
 	int ret;
-
 	/*
 	 * We assume the codec capture path is always activated
 	 * first, before the preview path starts streaming.
@@ -409,7 +438,6 @@ static int start_streaming(struct vb2_queue *vq, unsigned int count)
 	spin_lock_irqsave(&camif->slock, flags);
 	vp->frame_sequence = 0;
 	vp->state |= ST_VP_PENDING;
-
 	if (!list_empty(&vp->pending_buf_q) &&
 	    (!(vp->state & ST_VP_STREAMING) ||
 	     !(vp->state & ST_VP_SENSOR_STREAMING))) {
@@ -491,25 +519,25 @@ static int buffer_prepare(struct vb2_buffer *vb)
 	return 0;
 }
 
+
+
 static void buffer_queue(struct vb2_buffer *vb)
 {
 	struct camif_buffer *buf = container_of(vb, struct camif_buffer, vb);
 	struct camif_vp *vp = vb2_get_drv_priv(vb->vb2_queue);
 	struct camif_dev *camif = vp->camif;
+	int register_index=0;
 	unsigned long flags;
 
 	spin_lock_irqsave(&camif->slock, flags);
 	WARN_ON(camif_prepare_addr(vp, &buf->vb, &buf->paddr));
 
-	if (!(vp->state & ST_VP_STREAMING) && vp->active_buffers < 2) {
+	if (!(vp->state & ST_VP_STREAMING) && vp->active_buffers < 4) {
 		/* Schedule an empty buffer in H/W */
-		buf->index = vp->buf_index;
-
+		buf->index = get_free_dma_register_index(vp);
+		set_used_dma_register_index(vp,buf->index);
 		camif_hw_set_output_addr(vp, &buf->paddr, buf->index);
-		camif_hw_set_output_addr(vp, &buf->paddr, buf->index + 2);
-
 		camif_active_queue_add(vp, buf);
-		vp->buf_index = !vp->buf_index;
 	} else {
 		camif_pending_queue_add(vp, buf);
 	}
@@ -805,7 +833,6 @@ static int s3c_camif_vidioc_s_fmt(struct file *file, void *priv,
 	struct camif_frame *out_frame = &vp->out_frame;
 	const struct camif_fmt *fmt = NULL;
 	int ret;
-
 	pr_debug("[vp%d]\n", vp->id);
 
 	if (vb2_is_busy(&vp->vb_queue))
@@ -843,23 +870,19 @@ static int camif_pipeline_validate(struct camif_dev *camif)
 	struct v4l2_subdev_format src_fmt;
 	struct media_pad *pad;
 	int ret;
-
 	/* Retrieve format at the sensor subdev source pad */
 	pad = media_entity_remote_source(&camif->pads[0]);
 	if (!pad || media_entity_type(pad->entity) != MEDIA_ENT_T_V4L2_SUBDEV)
 		return -EPIPE;
-
 	src_fmt.pad = pad->index;
 	src_fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 	ret = v4l2_subdev_call(camif->sensor.sd, pad, get_fmt, NULL, &src_fmt);
 	if (ret < 0 && ret != -ENOIOCTLCMD)
 		return -EPIPE;
-
 	if (src_fmt.format.width != camif->mbus_fmt.width ||
 	    src_fmt.format.height != camif->mbus_fmt.height ||
 	    src_fmt.format.code != camif->mbus_fmt.code)
 		return -EPIPE;
-
 	return 0;
 }
 
@@ -872,26 +895,21 @@ static int s3c_camif_streamon(struct file *file, void *priv,
 	int ret;
 
 	pr_debug("[vp%d]\n", vp->id);
-
 	if (type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
 	if (vp->owner && vp->owner != priv)
 		return -EBUSY;
-
 	if (s3c_vp_active(vp))
 		return 0;
-
 	ret = media_entity_pipeline_start(sensor, camif->m_pipeline);
 	if (ret < 0)
 		return ret;
-
 	ret = camif_pipeline_validate(camif);
 	if (ret < 0) {
 		media_entity_pipeline_stop(sensor);
 		return ret;
 	}
-
 	return vb2_streamon(&vp->vb_queue, type);
 }
 
@@ -909,10 +927,10 @@ static int s3c_camif_streamoff(struct file *file, void *priv,
 
 	if (vp->owner && vp->owner != priv)
 		return -EBUSY;
-
 	ret = vb2_streamoff(&vp->vb_queue, type);
 	if (ret == 0)
 		media_entity_pipeline_stop(&camif->sensor.sd->entity);
+	free_all_dma_register_index(vp);
 	return ret;
 }
 
@@ -1318,7 +1336,6 @@ static int s3c_camif_subdev_set_fmt(struct v4l2_subdev *sd,
 
 	v4l2_dbg(1, debug, sd, "pad%d: code: 0x%x, %ux%u\n",
 		 fmt->pad, mf->code, mf->width, mf->height);
-
 	mf->colorspace = V4L2_COLORSPACE_JPEG;
 	mutex_lock(&camif->lock);
 
@@ -1340,7 +1357,6 @@ static int s3c_camif_subdev_set_fmt(struct v4l2_subdev *sd,
 		mutex_unlock(&camif->lock);
 		return 0;
 	}
-
 	switch (fmt->pad) {
 	case CAMIF_SD_PAD_SINK:
 		camif->mbus_fmt = *mf;
@@ -1650,8 +1666,9 @@ int s3c_camif_set_defaults(struct camif_dev *camif)
 					FMT_FL_S3C24XX_CODEC;
 		else
 			vp->fmt_flags = FMT_FL_S3C64XX;
-
-		vp->out_fmt = s3c_camif_find_format(vp, NULL, 0);
+		//set default format RGB565
+		u32 pixelformat=V4L2_PIX_FMT_RGB565X;
+		vp->out_fmt = s3c_camif_find_format(vp, &pixelformat, 0);
 		BUG_ON(vp->out_fmt == NULL);
 
 		memset(f, 0, sizeof(*f));

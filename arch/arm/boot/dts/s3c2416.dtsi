@@ -38,7 +38,6 @@
 		#interrupt-cells = <4>;
 		interrupt-controller;
 	};
-
 	clocks: clock-controller@4c000000 {
 		compatible = "samsung,s3c2416-clock";
 		reg = <0x4c000000 0x40>;
@@ -82,9 +81,4 @@
 		clock-names = "rtc";
 	};*/
 
-	i2c@54000000 {
-		compatible = "samsung,s3c2440-i2c";
-		clocks = <&clocks PCLK_I2C0>;
-		clock-names = "i2c";
-	};
 };

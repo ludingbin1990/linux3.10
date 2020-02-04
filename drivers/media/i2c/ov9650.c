@@ -30,11 +30,15 @@
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-mediabus.h>
 #include <media/ov9650.h>
-
+#include <asm/io.h>
 static int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "Debug level (0-2)");
-
+#define GPGCON 0x60
+#define GPGDAT 0x64
+#define GPJCON 0xD0
+#define GPJDAT 0xD4
+static void __iomem		*gpio_base_address;
 #define DRIVER_NAME "OV9650"
 
 /*
@@ -197,7 +201,6 @@ MODULE_PARM_DESC(debug, "Debug level (0-2)");
 #define OV965X_ID(_msb, _lsb)	((_msb) << 8 | (_lsb))
 #define OV9650_ID		0x9650
 #define OV9652_ID		0x9652
-
 struct ov965x_ctrls {
 	struct v4l2_ctrl_handler handler;
 	struct {
@@ -248,7 +251,7 @@ struct ov965x {
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	enum v4l2_mbus_type bus_type;
-	int gpios[NUM_GPIOS];
+	unsigned int gpios[NUM_GPIOS];
 	/* External master clock frequency */
 	unsigned long mclk_frequency;
 
@@ -281,6 +284,7 @@ struct i2c_rv {
 	u8 value;
 };
 
+#if 0
 static const struct i2c_rv ov965x_init_regs[] = {
 	{ REG_COM2, 0x10 },	/* Set soft sleep mode */
 	{ REG_COM5, 0x00 },	/* System clock options */
@@ -300,7 +304,7 @@ static const struct i2c_rv ov965x_init_regs[] = {
 	{ 0x35, 0x91 },
 	{ 0x94, 0x88 },
 	{ 0x95, 0x88 },
-	{ REG_COM15, 0xc1 },	/* Output range, RGB 555/565 */
+	//{ REG_COM15, 0xc1 },	/* Output range, RGB 555/565 */
 	{ REG_GRCOM, 0x2f },	/* Analog BLC & regulator */
 	{ REG_COM6, 0x43 },	/* HREF & ADBLC options */
 	{ REG_COM8, 0xe5 },	/* AGC/AEC options */
@@ -337,7 +341,51 @@ static const struct i2c_rv ov965x_init_regs[] = {
 	{ REG_COM9, 0x3a },	/* Gain ceiling 16x */
 	{ REG_NULL, 0 }
 };
+#endif
+//default VGA YUV mode  30fps 24Mhz input clock
+#define DELAY_FLAG 0xFe
+static const struct i2c_rv initregs[] = 
+{{0x12, 0x80},{DELAY_FLAG, 10},
+//{0x6a,0x3e},//for 15 fps
+{0x6a,0x7d},//for 30 fps
+{0x3b,0x09},//09
+{0x13,0x8f},//e0//8f
+{0x01,0x80},{0x02,0x80},{0x00,0x00},{0x10,0x00},
+//{0x35,0x91},//for 15 fps
+{0x35,0x81},//for 30 fps
+{0x0e,0xa0},
+{0x1e,0x34},//14
+{0xA8,0x80},
+ //////////////VGA//////////
+{0x04,0x00},{0x0c,0x04},{0x0d,0x80},
 
+//{0x11,0x81},//for 15 fps
+{0x11,0x80},//for 30 fps
+{0x6b,0x0a},//for 30 fps
+{0x12,0x40},//40->44
+{0x37,0x91},
+//{0x38,0x12},//for 15 fps
+{0x38,0x92},//for 30 fps
+//{0x39,0x43},
+{0x39,0x50},//for 30 fps
+/////////////END///Square_Chiu
+{0x18,0xc6},{0x17,0x26},{0x32,0xad},{0x03,0x00},{0x1a,0x3d},{0x19,0x01},{0x3f,0xa6},{0x14,0x2e},
+{0x15,0x10},{0x41,0x02},{0x42,0x08},{0x1b,0x00},{0x16,0x06},{0x33,0xe2},{0x34,0xbf},{0x96,0x04},
+{0x3a,0x00},{0x8e,0x00},{0x3c,0x77},{0x8B,0x06},{0x94,0x88},{0x95,0x88},
+{0x40,0xc1},//c1->d1
+{0x29,0x3f},{0x0f,0x42},{0x3d,0x92},{0x69,0x40},{0x5C,0xb9},{0x5D,0x96},{0x5E,0x10},{0x59,0xc0},
+{0x5A,0xaf},{0x5B,0x55},{0x43,0xf0},{0x44,0x10},{0x45,0x68},{0x46,0x96},{0x47,0x60},{0x48,0x80},
+{0x5F,0xe0},{0x60,0x8c},{0x61,0x20},{0xa5,0xd9},{0xa4,0x74},{0x8d,0x02},
+//{0x13,0xe7},
+{0x4f,0x3a},{0x50,0x3d},{0x51,0x03},{0x52,0x12},{0x53,0x26},{0x54,0x36},{0x55,0x45},{0x56,0x40},
+{0x57,0x40},{0x58,0x0d},{0x8C,0x23},{0x3E,0x02},{0xa9,0xb8},{0xaa,0x92},{0xab,0x0a},{0x8f,0xdf},
+{0x90,0x00},{0x91,0x00},{0x9f,0x00},{0xa0,0x00},{0x3A,0x01},{0x24,0x70},{0x25,0x64},{0x26,0xc3},
+{0x2a,0x00},{0x2b,0x00},{0x6c,0x40},{0x6d,0x30},{0x6e,0x4b},{0x6f,0x60},{0x70,0x70},{0x71,0x70},
+{0x72,0x70},{0x73,0x70},{0x74,0x60},{0x75,0x60},{0x76,0x50},{0x77,0x48},{0x78,0x3a},{0x79,0x2e},
+{0x7a,0x28},{0x7b,0x22},{0x7c,0x04},{0x7d,0x07},{0x7e,0x10},{0x7f,0x28},{0x80,0x36},{0x81,0x44},
+{0x82,0x52},{0x83,0x60},{0x84,0x6c},{0x85,0x78},{0x86,0x8c},{0x87,0x9e},{0x88,0xbb},{0x89,0xd2},
+{0x8a,0xe6},{REG_NULL, 0}
+};
 #define NUM_FMT_REGS 14
 /*
  * COM7,  COM3,  COM4, HSTART, HSTOP, HREF, VSTART, VSTOP, VREF,
@@ -430,7 +478,6 @@ static int ov965x_read(struct i2c_client *client, u8 addr, u8 *val)
 		.buf = &buf
 	};
 	int ret;
-
 	ret = i2c_transfer(client->adapter, &msg, 1);
 	if (ret == 1) {
 		msg.flags = I2C_M_RD;
@@ -442,7 +489,6 @@ static int ov965x_read(struct i2c_client *client, u8 addr, u8 *val)
 
 	v4l2_dbg(2, debug, client, "%s: 0x%02x @ 0x%02x. (%d)\n",
 		 __func__, *val, addr, ret);
-
 	return ret == 1 ? 0 : ret;
 }
 
@@ -462,10 +508,13 @@ static int ov965x_write_array(struct i2c_client *client,
 			      const struct i2c_rv *regs)
 {
 	int i, ret = 0;
-
-	for (i = 0; ret == 0 && regs[i].addr != REG_NULL; i++)
+	for (i = 0; ret == 0 && regs[i].addr != REG_NULL; i++){
+		if(regs[i].addr==DELAY_FLAG){
+			mdelay(regs[i].value);
+			continue;
+		}
 		ret = ov965x_write(client, regs[i].addr, regs[i].value);
-
+	}
 	return ret;
 }
 
@@ -518,13 +567,30 @@ static void ov965x_gpio_set(int gpio, int val)
 
 static void __ov965x_set_power(struct ov965x *ov965x, int on)
 {
+	unsigned int SettingValue=0;
 	if (on) {
-		ov965x_gpio_set(ov965x->gpios[GPIO_PWDN], 0);
-		ov965x_gpio_set(ov965x->gpios[GPIO_RST], 0);
+		//ov965x_gpio_set(ov965x->gpios[GPIO_PWDN], 0);
+		//ov965x_gpio_set(ov965x->gpios[GPIO_RST], 0);
+		//set PWDN 0
+		SettingValue=*((volatile u32 *)(gpio_base_address+GPGDAT)); 
+		SettingValue=SettingValue&(~(1<<12));
+		*((volatile u32 *)(gpio_base_address+GPGDAT))=SettingValue;
+		//set reset 0
+		SettingValue=*((volatile u32 *)(gpio_base_address+GPJDAT));
+		SettingValue=SettingValue&(~(1<<12));
+		*((volatile u32 *)(gpio_base_address+GPJDAT))=SettingValue;
 		usleep_range(25000, 26000);
 	} else {
-		ov965x_gpio_set(ov965x->gpios[GPIO_RST], 1);
-		ov965x_gpio_set(ov965x->gpios[GPIO_PWDN], 1);
+		//ov965x_gpio_set(ov965x->gpios[GPIO_RST], 1);
+		//ov965x_gpio_set(ov965x->gpios[GPIO_PWDN], 1);
+		//set PWDN 1
+		SettingValue=*((volatile u32 *)(gpio_base_address+GPGDAT));
+		SettingValue=SettingValue | (1<<12);
+		*((volatile u32 *)(gpio_base_address+GPGDAT))=SettingValue;
+		//set reset 1
+		SettingValue=*((volatile u32 *)(gpio_base_address+GPJDAT));
+		SettingValue=SettingValue | (1<<12);
+		*((volatile u32 *)(gpio_base_address+GPJDAT))=SettingValue;
 	}
 
 	ov965x->streaming = 0;
@@ -535,22 +601,19 @@ static int ov965x_s_power(struct v4l2_subdev *sd, int on)
 	struct ov965x *ov965x = to_ov965x(sd);
 	struct i2c_client *client = ov965x->client;
 	int ret = 0;
-
 	v4l2_dbg(1, debug, client, "%s: on: %d\n", __func__, on);
-
 	mutex_lock(&ov965x->lock);
 	if (ov965x->power == !on) {
 		__ov965x_set_power(ov965x, on);
 		if (on) {
 			ret = ov965x_write_array(client,
-						 ov965x_init_regs);
+						 initregs);
 			ov965x->apply_frame_fmt = 1;
 			ov965x->ctrls.update = 1;
 		}
 	}
 	if (!ret)
 		ov965x->power += on ? 1 : -1;
-
 	WARN_ON(ov965x->power < 0);
 	mutex_unlock(&ov965x->lock);
 	return ret;
@@ -1059,8 +1122,8 @@ static int ov965x_initialize_controls(struct ov965x *ov965x)
  */
 static void ov965x_get_default_format(struct v4l2_mbus_framefmt *mf)
 {
-	mf->width = ov965x_framesizes[0].width;
-	mf->height = ov965x_framesizes[0].height;
+	mf->width = ov965x_framesizes[1].width;
+	mf->height = ov965x_framesizes[1].height;
 	mf->colorspace = ov965x_formats[0].colorspace;
 	mf->code = ov965x_formats[0].code;
 	mf->field = V4L2_FIELD_NONE;
@@ -1401,51 +1464,69 @@ static const struct v4l2_subdev_ops ov965x_subdev_ops = {
 /*
  * Reset and power down GPIOs configuration
  */
-static int ov965x_configure_gpios(struct ov965x *ov965x,
-				  const struct ov9650_platform_data *pdata)
+
+
+static int ov9650_gpio_init(void)
 {
-	int ret, i;
+	
+	unsigned int SettingValue=0;
+	//gpio base address
+	gpio_base_address=ioremap(0x56000000,0x1000);
+	if(!gpio_base_address)
+		return -1;
+	//config the GPG12 pin to the output mode
+	SettingValue=*((volatile u32 *)(gpio_base_address+GPGCON));
+	SettingValue=(SettingValue&(~(3<<24)))|(1<<24);
+	*((volatile u32 *)(gpio_base_address+GPGCON))=SettingValue;
+	//config the GPG12 pin output 0,GPG12 connect to ov9650 PWDN pin
+	SettingValue=*((volatile u32 *)(gpio_base_address+GPGDAT));
+	SettingValue=SettingValue&(~(1<<12));
+	*((volatile u32 *)(gpio_base_address+GPGDAT))=SettingValue;
 
-	ov965x->gpios[GPIO_PWDN] = pdata->gpio_pwdn;
-	ov965x->gpios[GPIO_RST]  = pdata->gpio_reset;
-
-	for (i = 0; i < ARRAY_SIZE(ov965x->gpios); i++) {
-		int gpio = ov965x->gpios[i];
-
-		if (!gpio_is_valid(gpio))
-			continue;
-		ret = devm_gpio_request_one(&ov965x->client->dev, gpio,
-					    GPIOF_OUT_INIT_HIGH, "OV965X");
-		if (ret < 0)
-			return ret;
-		v4l2_dbg(1, debug, &ov965x->sd, "set gpio %d to 1\n", gpio);
-
-		gpio_set_value(gpio, 1);
-		gpio_export(gpio, 0);
-		ov965x->gpios[i] = gpio;
-	}
-
+	//config the GPJ to camera interface mode
+	SettingValue=*((volatile u32 *)(gpio_base_address+GPJCON));
+	SettingValue=2<<24|2<<22|2<<20|2<<18|2<<16|2<<14|2<<12|2<<10|2<<8|2<<6|2<<4|2<<2|2;
+	*((volatile u32 *)(gpio_base_address+GPJCON))=SettingValue;
+	mdelay(100);
 	return 0;
 }
 
+static int ov9650_gpio_uninit(void)
+{
+	if(gpio_base_address)
+		iounmap(gpio_base_address);
+	return 0;
+}
+static int ov965x_configure_gpios(struct ov965x *ov965x,
+				  const struct ov9650_platform_data *pdata)
+{
+	unsigned int SettingValue=0;
+	//set PWDN 1
+	SettingValue=*((volatile u32 *)(gpio_base_address+GPGDAT)); 
+	SettingValue=SettingValue | (1<<12);
+	*((volatile u32 *)(gpio_base_address+GPGDAT))=SettingValue;
+	//set reset 1
+	SettingValue=*((volatile u32 *)(gpio_base_address+GPJDAT));
+	SettingValue=SettingValue | (1<<12);
+	*((volatile u32 *)(gpio_base_address+GPJDAT))=SettingValue;
+	mdelay(1000);
+	return 0;
+}
 static int ov965x_detect_sensor(struct v4l2_subdev *sd)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct ov965x *ov965x = to_ov965x(sd);
 	u8 pid, ver;
 	int ret;
-
 	mutex_lock(&ov965x->lock);
 	 __ov965x_set_power(ov965x, 1);
 	usleep_range(25000, 26000);
-
 	/* Check sensor revision */
 	ret = ov965x_read(client, REG_PID, &pid);
 	if (!ret)
 		ret = ov965x_read(client, REG_VER, &ver);
 
 	__ov965x_set_power(ov965x, 0);
-
 	if (!ret) {
 		ov965x->id = OV965X_ID(pid, ver);
 		if (ov965x->id == OV9650_ID || ov965x->id == OV9652_ID) {
@@ -1457,69 +1538,62 @@ static int ov965x_detect_sensor(struct v4l2_subdev *sd)
 		}
 	}
 	mutex_unlock(&ov965x->lock);
-
 	return ret;
 }
-
+extern struct v4l2_device* get_notify_v4l2_dev(char *sensor_name);
+extern void s3c_camif_bound_subdev(struct v4l2_device *v4l2_dev,struct v4l2_subdev *sd,unsigned long frequency);
 static int ov965x_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
 	const struct ov9650_platform_data *pdata = client->dev.platform_data;
 	struct v4l2_subdev *sd;
+	struct v4l2_device* v4l2_dev=NULL;
 	struct ov965x *ov965x;
 	int ret;
-
-	if (pdata == NULL) {
-		dev_err(&client->dev, "platform data not specified\n");
-		return -EINVAL;
-	}
-
-	if (pdata->mclk_frequency == 0) {
-		dev_err(&client->dev, "MCLK frequency not specified\n");
-		return -EINVAL;
-	}
-
+	char *sensor_name;
 	ov965x = devm_kzalloc(&client->dev, sizeof(*ov965x), GFP_KERNEL);
 	if (!ov965x)
 		return -ENOMEM;
 
 	mutex_init(&ov965x->lock);
 	ov965x->client = client;
-	ov965x->mclk_frequency = pdata->mclk_frequency;
-
+	of_property_read_u32(client->dev.of_node,"clock_frequency",&(ov965x->mclk_frequency));
 	sd = &ov965x->sd;
 	v4l2_i2c_subdev_init(sd, client, &ov965x_subdev_ops);
+	
 	strlcpy(sd->name, DRIVER_NAME, sizeof(sd->name));
 
 	sd->internal_ops = &ov965x_sd_internal_ops;
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
 		     V4L2_SUBDEV_FL_HAS_EVENTS;
-
+	ov9650_gpio_init();
 	ret = ov965x_configure_gpios(ov965x, pdata);
 	if (ret < 0)
 		return ret;
-
 	ov965x->pad.flags = MEDIA_PAD_FL_SOURCE;
 	sd->entity.type = MEDIA_ENT_T_V4L2_SUBDEV_SENSOR;
 	ret = media_entity_init(&sd->entity, 1, &ov965x->pad, 0);
 	if (ret < 0)
 		return ret;
-
 	ret = ov965x_initialize_controls(ov965x);
 	if (ret < 0)
 		goto err_me;
 
 	ov965x_get_default_format(&ov965x->format);
-	ov965x->frame_size = &ov965x_framesizes[0];
-	ov965x->fiv = &ov965x_intervals[0];
-
+	ov965x->frame_size = &ov965x_framesizes[1];
+	ov965x->fiv = &ov965x_intervals[3];
+	of_property_read_string(client->dev.of_node, "compatible", &sensor_name);
+	v4l2_dev=get_notify_v4l2_dev(sensor_name);
+	if(!v4l2_dev)
+		return -ENOMEM;
+	v4l2_device_register_subdev(v4l2_dev,sd);
+	s3c_camif_bound_subdev(v4l2_dev,sd,ov965x->mclk_frequency);
 	ret = ov965x_detect_sensor(sd);
 	if (ret < 0)
 		goto err_ctrls;
 
 	/* Update exposure time min/max to match frame format */
 	ov965x_update_exposure_ctrl(ov965x);
-
 	return 0;
 err_ctrls:
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
@@ -1531,7 +1605,7 @@ err_me:
 static int ov965x_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-
+	ov9650_gpio_uninit();
 	v4l2_device_unregister_subdev(sd);
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	media_entity_cleanup(&sd->entity);
@@ -1545,17 +1619,36 @@ static const struct i2c_device_id ov965x_id[] = {
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(i2c, ov965x_id);
-
+#ifdef CONFIG_OF
+static const struct of_device_id ov965x_camif_match[] = {
+	{ .compatible = "ov9650"},
+	{},
+};
+MODULE_DEVICE_TABLE(of, ov965x_camif_match);
+#endif
 static struct i2c_driver ov965x_i2c_driver = {
 	.driver = {
 		.name	= DRIVER_NAME,
+		.of_match_table = of_match_ptr(ov965x_camif_match),
 	},
 	.probe		= ov965x_probe,
 	.remove		= ov965x_remove,
 	.id_table	= ov965x_id,
 };
+static int __init ov965x_i2c_driver_init(void)
+{ 
+	return i2c_add_driver(&ov965x_i2c_driver);
+} 
 
-module_i2c_driver(ov965x_i2c_driver);
+static void __exit  ov965x_i2c_driver_exit(void)
+{ 
+	i2c_del_driver(&ov965x_i2c_driver);
+} 
+
+
+late_initcall(ov965x_i2c_driver_init);
+__exitcall(ov965x_i2c_driver_exit);
+//module_i2c_driver(ov965x_i2c_driver);
 
 MODULE_AUTHOR("Sylwester Nawrocki <sylvester.nawrocki@gmail.com>");
 MODULE_DESCRIPTION("OV9650/OV9652 CMOS Image Sensor driver");

@@ -227,6 +227,7 @@ struct camif_vp {
 	unsigned int		payload;
 	struct camif_frame	out_frame;
 	unsigned int		state;
+	unsigned int dma_register_bit_map;
 	u16			fmt_flags;
 	u8			id;
 	u16			rotation;
@@ -263,6 +264,12 @@ struct camif_vp {
  * @slock:	  spinlock protecting CAMIF registers
  * @io_base:	  start address of the mmaped CAMIF registers
  */
+struct notify_v4l2_dev{
+	struct v4l2_device*v4l2_dev;
+	struct list_head v4l2_dev_list;
+	char sensor_name[20];
+};
+
 struct camif_dev {
 	struct media_device		media_dev;
 	struct v4l2_device		v4l2_dev;
@@ -271,7 +278,7 @@ struct camif_dev {
 	struct v4l2_rect		camif_crop;
 	struct media_pad		pads[CAMIF_SD_PADS_NUM];
 	int				stream_count;
-
+	struct notify_v4l2_dev *notify_v4l2_device;
 	struct cam_sensor {
 		struct v4l2_subdev	*sd;
 		short			power_count;
