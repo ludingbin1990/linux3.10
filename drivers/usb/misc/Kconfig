@@ -79,6 +79,11 @@ config USB_LCD
 	  To compile this driver as a module, choose M here: the
 	  module will be called usblcd.
 
+config USB_TEST_MOUSE
+	tristate "USB test mouse driver"
+	help
+	  This is a mouse test driver.
+
 config USB_LED
 	tristate "USB LED driver support"
 	help

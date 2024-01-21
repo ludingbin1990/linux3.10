@@ -22,6 +22,7 @@
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/platform_data/usb-ohci-s3c2410.h>
+#include <linux/of.h>
 
 #define valid_port(idx) ((idx) == 1 || (idx) == 2)
 
@@ -339,7 +340,8 @@ static int usb_hcd_s3c2410_probe(const struct hc_driver *driver,
 				  struct platform_device *dev)
 {
 	struct usb_hcd *hcd = NULL;
-	int retval;
+    struct resource *res;
+	int retval, irq_num;
 
 	s3c2410_usb_set_power(dev->dev.platform_data, 1, 1);
 	s3c2410_usb_set_power(dev->dev.platform_data, 2, 1);
@@ -348,10 +350,15 @@ static int usb_hcd_s3c2410_probe(const struct hc_driver *driver,
 	if (hcd == NULL)
 		return -ENOMEM;
 
-	hcd->rsrc_start = dev->resource[0].start;
-	hcd->rsrc_len	= resource_size(&dev->resource[0]);
+	res = platform_get_resource(dev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&dev->dev, "no io resource\n");
+		return -EINVAL;
+	}
+	hcd->rsrc_start = res->start;
+	hcd->rsrc_len	= res->end - res->start;
 
-	hcd->regs = devm_ioremap_resource(&dev->dev, &dev->resource[0]);
+	hcd->regs = devm_ioremap_resource(&dev->dev, res);
 	if (IS_ERR(hcd->regs)) {
 		retval = PTR_ERR(hcd->regs);
 		goto err_put;
@@ -375,7 +382,13 @@ static int usb_hcd_s3c2410_probe(const struct hc_driver *driver,
 
 	ohci_hcd_init(hcd_to_ohci(hcd));
 
-	retval = usb_add_hcd(hcd, dev->resource[1].start, 0);
+	irq_num = platform_get_irq(dev, 0);
+	if (irq_num <= 0) {
+		dev_err(&dev->dev, "cannot find IRQ\n");
+		goto err_ioremap;
+	}
+
+	retval = usb_add_hcd(hcd, irq_num, 0);
 	if (retval != 0)
 		goto err_ioremap;
 
@@ -520,7 +533,15 @@ static const struct dev_pm_ops ohci_hcd_s3c2410_pm_ops = {
 	.suspend	= ohci_hcd_s3c2410_drv_suspend,
 	.resume		= ohci_hcd_s3c2410_drv_resume,
 };
-
+#ifdef CONFIG_OF
+static const struct of_device_id ohci_hcd_s3c2410_of_match[] = {
+	{
+		.compatible = "samsung,s3c2410-ohci",
+	},
+	{},
+};
+MODULE_DEVICE_TABLE(of, ohci_hcd_s3c2410_of_match);
+#endif
 static struct platform_driver ohci_hcd_s3c2410_driver = {
 	.probe		= ohci_hcd_s3c2410_drv_probe,
 	.remove		= ohci_hcd_s3c2410_drv_remove,
@@ -528,6 +549,9 @@ static struct platform_driver ohci_hcd_s3c2410_driver = {
 	.driver		= {
 		.owner	= THIS_MODULE,
 		.name	= "s3c2410-ohci",
+		#ifdef CONFIG_OF
+		.of_match_table = ohci_hcd_s3c2410_of_match,
+		#endif
 		.pm	= &ohci_hcd_s3c2410_pm_ops,
 	},
 };

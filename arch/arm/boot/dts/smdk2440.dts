@@ -97,6 +97,12 @@ uart and timer setting just use the interrupt innformation,the other platform de
 			clock_frequency=<24000000>;  //cammera frequency
 		};
 	};
+	usb_hc0: usb@49000000 {
+		compatible = "samsung,s3c2410-ohci";
+                interrupt-parent = <&intc>;
+		reg = <0x49000000 0x100>;
+		interrupts = <0 0 26 1>;
+	};
 
 };
 /*
