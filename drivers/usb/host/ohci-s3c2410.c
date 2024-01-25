@@ -435,7 +435,7 @@ static const struct hc_driver ohci_s3c2410_hc_driver = {
 	 * generic hardware linkage
 	 */
 	.irq =			ohci_irq,
-	.flags =		HCD_USB11 | HCD_MEMORY,
+	.flags =		HCD_USB11 | HCD_MEMORY | HCD_LOCAL_MEM,
 
 	/*
 	 * basic lifecycle operations
