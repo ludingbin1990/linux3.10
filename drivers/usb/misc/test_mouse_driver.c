@@ -31,7 +31,6 @@ static void usbmouse_as_key_irq(struct urb *urb)
 	 *          bit2-中键, 1-按下, 0-松开 
 	 *
      */
-
 	if ((pre_val & (1<<0)) != (usb_buf[0] & (1<<0)))
 	{
 		/* 左键发生了变化 */
@@ -63,6 +62,7 @@ static void usbmouse_as_key_irq(struct urb *urb)
 	
 	pre_val = usb_buf[0];
 
+
 	/* 重新提交urb */
 	usb_submit_urb(uk_urb, GFP_KERNEL);
 }
@@ -75,6 +75,10 @@ static int usbmouse_as_key_probe(struct usb_interface *intf, const struct usb_de
 	int pipe;
 	
 	interface = intf->cur_altsetting;
+	if (!dev->dev.coherent_dma_mask) {
+		dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
+	}
+
 	endpoint = &interface->endpoint[0].desc;
 #if 0
 	/* a. 分配一个input_dev */
@@ -104,7 +108,11 @@ static int usbmouse_as_key_probe(struct usb_interface *intf, const struct usb_de
 	len = endpoint->wMaxPacketSize;
 
 	/* 目的: */
-	usb_buf = dmam_alloc_coherent(&dev->dev, len, &usb_buf_phys, GFP_ATOMIC);
+	usb_buf = dma_alloc_coherent(&dev->dev, len, &usb_buf_phys, GFP_ATOMIC);
+	if (!usb_buf) {
+		pr_err("usb_buf alloc error!\n");
+	}
+
 
 	/* 使用"3要素" */
 	/* 分配usb request block */
@@ -130,9 +138,11 @@ static void usbmouse_as_key_disconnect(struct usb_interface *intf)
 	usb_kill_urb(uk_urb);
 	usb_free_urb(uk_urb);
 
-	dmam_free_coherent(&dev->dev, len, usb_buf, usb_buf_phys);
+	dma_free_coherent(&dev->dev, len, usb_buf, usb_buf_phys);
+	#if 0
 	input_unregister_device(uk_dev);
 	input_free_device(uk_dev);
+	#endif
 }
 
 /* 1. 分配/设置usb_driver */
