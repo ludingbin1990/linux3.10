@@ -96,6 +96,18 @@ uart and timer setting just use the interrupt innformation,the other platform de
 			reg=<0x30>;  //ov9650 addr is 0x60,but in the i2c driver,the addr will <<1,so set 0x30 here
 			clock_frequency=<24000000>;  //cammera frequency
 		};
+		icm20602@68 {
+			compatible = "icm20602";
+			reg=<0x68>; //icm20602 default addr is 0x68(set pin SA0 as low)
+		};
+	};
+	spi1: spi@59000020 {
+		compatible = "samsung,s3c2410-spi";
+		interrupt-parent = <&intc>;
+		reg = <0x59000020 0x20>;
+		interrupts = <0 0 29 1>;
+		samsung,spi-bus-num=<0x1>;
+		samsung,spi-num-cs=<0x1>;
 	};
 	usb_hc0: usb@49000000 {
 		compatible = "samsung,s3c2410-ohci";

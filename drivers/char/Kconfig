@@ -195,6 +195,8 @@ config DS1620
 	  It is recommended to be used on a NetWinder, but it is not a
 	  necessity.
 
+config ICM20602
+	tristate "ICM20602 support"
 config NWBUTTON
 	tristate "NetWinder Button"
 	depends on ARCH_NETWINDER
