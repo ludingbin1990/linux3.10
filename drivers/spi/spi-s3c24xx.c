@@ -61,6 +61,7 @@ struct s3c24xx_spi {
 	struct completion	 done;
 
 	void __iomem		*regs;
+    void __iomem		*spi_gpio_regs;
 	int			 irq;
 	int			 len;
 	int			 count;
@@ -506,6 +507,73 @@ static void s3c24xx_spi_initialsetup(struct s3c24xx_spi *hw)
 	}
 }
 
+#ifdef CONFIG_OF
+
+static void
+s3c24xx_spi_parse_dt(struct device_node *np, struct s3c24xx_spi *spi)
+{
+	struct s3c2410_spi_info *pdata = spi->pdata;
+
+	if (!np)
+		return;
+
+	of_property_read_u32(np, "samsung,spi-bus-num", &pdata->bus_num);
+	of_property_read_u32(np, "samsung,spi-num-cs", &pdata->num_cs);
+}
+#else
+static void
+s3c24xx_spi_parse_dt(struct device_node *np, struct s3c24xx_spi *spi)
+{
+	return;
+}
+#endif
+
+#define GPGCON 0x0
+#define GPGDAT 0x4
+#define GPGUP 0x8
+
+static void s3c2440_spi_gpio_set_cs(struct s3c2410_spi_info *spi, int cs, int pol)
+{
+/* It seems there is a low level pulse when set the cs pin as gpio output make the sensor output error.
+   So move the cs control to the sensor driver work around. */
+#if 0
+    unsigned int tmp_value;
+
+    if(!spi->spi_gpio_regs)
+		return ;
+    tmp_value=*((volatile u32 *)(spi->spi_gpio_regs + GPGDAT));
+    tmp_value = (tmp_value & (~(1 << 3))) | (pol << 3);
+    *((volatile u32 *)(spi->spi_gpio_regs + GPGDAT))=tmp_value;
+#endif
+    return ;
+}
+void s3c2440_init_spi1_gpio(struct s3c24xx_spi *spi)
+{
+	unsigned int tmp_value;
+	spi->spi_gpio_regs=ioremap(0x56000060, 0x10);
+	if(!spi->spi_gpio_regs)
+		return ;
+
+    tmp_value=*((volatile u32 *)(spi->spi_gpio_regs + GPGUP));
+    *((volatile u32 *)(spi->spi_gpio_regs + GPGUP))=tmp_value & (~(1 << 3));
+    tmp_value=*((volatile u32 *)(spi->spi_gpio_regs + GPGCON));
+    tmp_value = tmp_value & (~(0x3 << 6));
+    /*set gpg5,6,7 as spi pin, set gpg3 cs pin move to the  sensor driver for work around. */
+    //tmp_value |= (0x1 << 6) | (0x3 <<10) | (0x3 <<12) | (0x3 <<14);
+    tmp_value |= (0x3 <<10) | (0x3 <<12) | (0x3 <<14);
+	*((volatile u32 *)(spi->spi_gpio_regs + GPGCON))=tmp_value;
+    spi->pdata->spi_gpio_regs = spi->spi_gpio_regs;
+    spi->pdata->set_cs = spi->set_cs = s3c2440_spi_gpio_set_cs;
+
+    return ;
+}
+void s3c2440_uninit_spi1_gpio(struct s3c24xx_spi *spi)
+{
+	if(spi->spi_gpio_regs) {
+		iounmap(spi->spi_gpio_regs);
+    }
+}
+
 static int s3c24xx_spi_probe(struct platform_device *pdev)
 {
 	struct s3c2410_spi_info *pdata;
@@ -525,14 +593,29 @@ static int s3c24xx_spi_probe(struct platform_device *pdev)
 	memset(hw, 0, sizeof(struct s3c24xx_spi));
 
 	hw->master = spi_master_get(master);
-	hw->pdata = pdata = pdev->dev.platform_data;
+    if (!pdev->dev.of_node) {
+        pdata = pdev->dev.platform_data;
+        if (pdata == NULL) {
+		    dev_err(&pdev->dev, "No platform data supplied\n");
+		    err = -ENOENT;
+		    goto err_no_pdata;
+	    }
+    } else {
+        pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	    if (!pdata) {
+		    dev_err(&pdev->dev, "no memory for platform data\n");
+            err = -ENOENT;
+		    goto err_no_pdata;
+	    }
+        pdev->dev.platform_data = pdata;
+        master->dev.of_node = pdev->dev.of_node;
+    }
+	hw->pdata = pdata;
 	hw->dev = &pdev->dev;
-
-	if (pdata == NULL) {
-		dev_err(&pdev->dev, "No platform data supplied\n");
-		err = -ENOENT;
-		goto err_no_pdata;
-	}
+    if (pdev->dev.of_node) {
+        s3c24xx_spi_parse_dt(pdev->dev.of_node, hw);
+        s3c2440_init_spi1_gpio(hw);
+    }
 
 	platform_set_drvdata(pdev, hw);
 	init_completion(&hw->done);
@@ -562,7 +645,6 @@ static int s3c24xx_spi_probe(struct platform_device *pdev)
 	dev_dbg(hw->dev, "bitbang at %p\n", &hw->bitbang);
 
 	/* find and map our resources */
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
 		dev_err(&pdev->dev, "Cannot get IORESOURCE_MEM\n");
@@ -677,6 +759,8 @@ static int s3c24xx_spi_remove(struct platform_device *dev)
 	free_irq(hw->irq, hw);
 	iounmap(hw->regs);
 
+    s3c2440_uninit_spi1_gpio(hw);
+
 	if (hw->set_cs == s3c24xx_spi_gpiocs)
 		gpio_free(hw->pdata->pin_cs);
 
@@ -720,6 +804,15 @@ static const struct dev_pm_ops s3c24xx_spi_pmops = {
 #endif /* CONFIG_PM */
 
 MODULE_ALIAS("platform:s3c2410-spi");
+
+#ifdef CONFIG_OF
+static const struct of_device_id s3c24xx_spi_match[] = {
+	{ .compatible = "samsung,s3c2410-spi", .data = (void *)0 },
+	{},
+};
+MODULE_DEVICE_TABLE(of, s3c24xx_spi_match);
+#endif
+
 static struct platform_driver s3c24xx_spi_driver = {
 	.probe		= s3c24xx_spi_probe,
 	.remove		= s3c24xx_spi_remove,
@@ -727,6 +820,7 @@ static struct platform_driver s3c24xx_spi_driver = {
 		.name	= "s3c2410-spi",
 		.owner	= THIS_MODULE,
 		.pm	= S3C24XX_SPI_PMOPS,
+		.of_match_table = of_match_ptr(s3c24xx_spi_match),
 	},
 };
 module_platform_driver(s3c24xx_spi_driver);

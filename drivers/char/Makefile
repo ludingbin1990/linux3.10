@@ -18,7 +18,8 @@ obj-$(CONFIG_IBM_BSR)		+= bsr.o
 obj-$(CONFIG_SGI_MBCS)		+= mbcs.o
 obj-$(CONFIG_BFIN_OTP)		+= bfin-otp.o
 
-obj-$(CONFIG_ICM20602)		+= icm20602.o
+obj-$(CONFIG_ICM20602_I2C)	+= icm20602.o
+obj-$(CONFIG_ICM20602_SPI)	+= spi_icm20602.o
 obj-$(CONFIG_PRINTER)		+= lp.o
 
 obj-$(CONFIG_APM_EMULATION)	+= apm-emulation.o

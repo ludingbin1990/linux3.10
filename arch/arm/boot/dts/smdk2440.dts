@@ -104,10 +104,17 @@ uart and timer setting just use the interrupt innformation,the other platform de
 	spi1: spi@59000020 {
 		compatible = "samsung,s3c2410-spi";
 		interrupt-parent = <&intc>;
+		#address-cells = <1>;
+		#size-cells = <0>;
 		reg = <0x59000020 0x20>;
 		interrupts = <0 0 29 1>;
 		samsung,spi-bus-num=<0x1>;
-		samsung,spi-num-cs=<0x1>;
+		samsung,spi-num-cs=<0x2>;
+		icm20602@1 {
+			compatible = "icm20602";
+			reg = <1>;
+			spi-max-frequency = <10000000>;
+		};
 	};
 	usb_hc0: usb@49000000 {
 		compatible = "samsung,s3c2410-ohci";
